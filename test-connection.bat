@@ -14,8 +14,8 @@ if not errorlevel 1 (
 )
 
 REM 测试 PaddleOCR API
-echo 2️⃣  测试 PaddleOCR API (localhost:8080)...
-curl -s -o nul -w "%%{http_code}" http://localhost:8080/health | findstr "200" >nul
+echo 2️⃣  测试 PaddleOCR API (localhost:8081)...
+curl -s -o nul -w "%%{http_code}" http://localhost:8081/health | findstr "200" >nul
 if not errorlevel 1 (
     echo    ✅ PaddleOCR API 正常
 ) else (

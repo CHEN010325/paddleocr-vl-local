@@ -4,15 +4,34 @@ FROM python:3.10-slim
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
+# 1. 安装系统依赖 (关键修改)
+# PaddleOCR 和 OpenCV 需要 libgl1, libgomp1, libglib2.0 等库
+# 同时保留 curl 用于健康检查
 RUN apt-get update && apt-get install -y \
     curl \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
+
+# 2. 优先安装适配 Blackwell 架构 (CUDA 12.x) 的 PaddlePaddle (关键修改)
+# 使用官方 Nightly 源，覆盖默认的 pip 源
+RUN pip install --pre paddlepaddle-gpu \
+    -i https://www.paddlepaddle.org.cn/packages/nightly/cu129/ \
+    --no-cache-dir
+
+# 3. 安装 PaddleX 和 OCR 插件 (关键修改)
+# 你的 requirements.txt 里似乎漏掉了这些核心库
+RUN pip install "paddlex[ocr]" --no-cache-dir
 
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 依赖
+# 4. 安装其他 Web 依赖 (fastapi, uvicorn 等)
+# 使用国内镜像源加速 (可选，根据网络情况)
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制应用文件
@@ -31,4 +50,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # 启动应用
 CMD ["python", "server.py"]
-

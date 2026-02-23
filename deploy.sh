@@ -43,10 +43,10 @@ else
 fi
 
 # 检查 PaddleOCR API
-if curl -f http://localhost:8080/health > /dev/null 2>&1; then
-    echo "✅ PaddleOCR API (8080) - 正常"
+if curl -f http://localhost:8081/health > /dev/null 2>&1; then
+    echo "✅ PaddleOCR API (8081) - 正常"
 else
-    echo "⏳ PaddleOCR API (8080) - 启动中..."
+    echo "⏳ PaddleOCR API (8081) - 启动中..."
 fi
 
 echo ""
@@ -54,7 +54,7 @@ echo "🎉 部署完成！"
 echo ""
 echo "📍 访问地址:"
 echo "  前端界面: http://localhost:8000"
-echo "  API 文档: http://localhost:8080"
+echo "  API 地址: http://localhost:8081"
 echo ""
 echo "📋 常用命令:"
 echo "  查看日志: docker compose logs -f"

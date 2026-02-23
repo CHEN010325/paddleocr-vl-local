@@ -370,6 +370,13 @@ body {
     accent-color: var(--accent-color);
 }
 
+.options-divider {
+    border: 0;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    margin: 8px 0;
+    width: 100%;
+}
+
 .section-header {
     display: flex;
     justify-content: space-between;

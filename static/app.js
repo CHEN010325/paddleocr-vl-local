@@ -1,6 +1,6 @@
 // Configuration
 const API_BASE = '/api';
-let availableModel = 'PaddleOCR-VL-Pipeline'; // Default model name for UI
+let availableModel = 'PaddleOCR-VL-1.5-0.9B'; // Default model name for UI
 const PROMPT_TEXT = ""; // Not used in pipeline mode
 
 // State
@@ -25,6 +25,12 @@ const startBtn = document.getElementById('start-btn');
 const chartRecognitionSwitch = document.getElementById('chart-recognition-switch');
 const docUnwarpingSwitch = document.getElementById('doc-unwarping-switch');
 const docOrientationSwitch = document.getElementById('doc-orientation-switch');
+const sealRecognitionSwitch = document.getElementById('seal-recognition-switch');
+const formatContentSwitch = document.getElementById('format-content-switch');
+const formulaNumberSwitch = document.getElementById('formula-number-switch');
+const ignoreHeaderSwitch = document.getElementById('ignore-header-switch');
+const ignoreFooterSwitch = document.getElementById('ignore-footer-switch');
+const ignoreNumberSwitch = document.getElementById('ignore-number-switch');
 
 // Templates
 const queueItemTemplate = document.getElementById('queue-item-template');
@@ -226,11 +232,12 @@ async function processNextInQueue() {
     }
 
     try {
-        const markdown = await callVLLM(item.dataUrl);
+        const data = await callVLLM(item.dataUrl);
         
         // Success
         item.status = 'completed';
-        item.markdown = markdown;
+        item.markdown = data.markdown;
+        item.images = data.images; // Store base64 images
         
         if (el) {
             el.classList.remove('processing');
@@ -281,17 +288,25 @@ async function processNextInQueue() {
 }
 
 async function callVLLM(base64Image) {
-    // Use our backend proxy which talks to the Official Pipeline Service (Docker Compose 8080)
-    // Read user's configuration choices (matching app.py line 370-376)
+    // Collect ignore labels
+    const ignoreLabels = [];
+    if (ignoreHeaderSwitch.checked) ignoreLabels.push('header', 'header_image');
+    if (ignoreFooterSwitch.checked) ignoreLabels.push('footer', 'footer_image');
+    if (ignoreNumberSwitch.checked) ignoreLabels.push('number');
+
     const payload = {
         image: base64Image,
-        useLayoutDetection: true,  // Always use layout detection for document parsing
+        useLayoutDetection: true,
         useChartRecognition: chartRecognitionSwitch.checked,
         useDocUnwarping: docUnwarpingSwitch.checked,
-        useDocOrientationClassify: docOrientationSwitch.checked
+        useDocOrientationClassify: docOrientationSwitch.checked,
+        useSealRecognition: sealRecognitionSwitch.checked,
+        formatBlockContent: formatContentSwitch.checked,
+        showFormulaNumber: formulaNumberSwitch.checked,
+        markdownIgnoreLabels: ignoreLabels
     };
 
-    const response = await fetch(`${API_BASE}/ocr`, {
+    const response = await fetch(`${API_BASE}/paddleocr-vl-1.5`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -303,7 +318,7 @@ async function callVLLM(base64Image) {
     }
 
     const data = await response.json();
-    return data.markdown;
+    return data;
 }
 
 function renderResult(item) {
@@ -319,8 +334,18 @@ function renderResult(item) {
     card.querySelector('.page-number').textContent = item.name;
     card.querySelector('.image-preview img').src = item.dataUrl;
     
+    // Replace image paths in markdown with data URLs from item.images
+    let markdown = item.markdown || '(无内容)';
+    if (item.images) {
+        Object.entries(item.images).forEach(([path, base64]) => {
+            // Replace the path in markdown with data URL
+            const dataUrl = `data:image/jpeg;base64,${base64}`;
+            markdown = markdown.split(path).join(dataUrl);
+        });
+    }
+
     // Render markdown using marked.js
-    const mdHtml = marked.parse(item.markdown || '(无内容)');
+    const mdHtml = marked.parse(markdown);
     card.querySelector('.markdown-preview').innerHTML = mdHtml;
     
     // Setup copy button
@@ -366,75 +391,46 @@ async function downloadAllMarkdown() {
     
     const totalPages = processedResults.length;
     let combinedMarkdown = '';
-    let imageUrls = new Set();
-    
-    // Add summary header
-    combinedMarkdown += `# OCR 识别结果\n\n`;
-    combinedMarkdown += `- 总页数/文件数：${totalPages}\n`;
-    combinedMarkdown += `- 生成时间：${new Date().toLocaleString('zh-CN')}\n\n`;
-    combinedMarkdown += `---\n\n`;
+    let allImages = {}; // Store all unique images
     
     processedResults.forEach((item, idx) => {
-        combinedMarkdown += `<!-- 页面 ${idx + 1}/${totalPages}: ${item.name} -->\n\n`;
-        
-        // Extract image URLs and convert to relative paths
         let markdown = item.markdown;
         
-        // Find all /static/ocr_images/ URLs
-        const imgRegex = /\/static\/ocr_images\/([^\s"')]+)/g;
-        let match;
-        while ((match = imgRegex.exec(markdown)) !== null) {
-            imageUrls.add(match[1]); // Store filename (using Set to avoid duplicates)
+        // Collect images and use relative paths
+        if (item.images) {
+            Object.entries(item.images).forEach(([path, base64]) => {
+                const filename = path.split('/').pop();
+                allImages[filename] = base64;
+                markdown = markdown.split(path).join(`ocr_images/${filename}`);
+            });
         }
-        
-        // Replace absolute paths with relative paths
-        markdown = markdown.replace(/\/static\/ocr_images\//g, 'ocr_images/');
         
         combinedMarkdown += markdown + '\n\n';
-        
-        // Add separator between pages (except last page)
-        if (idx < totalPages - 1) {
-            combinedMarkdown += '---\n\n';
-        }
     });
     
+    const imageCount = Object.keys(allImages).length;
+    
     // If there are images, create a ZIP package
-    if (imageUrls.size > 0) {
-        console.log(`准备打包：${totalPages} 个页面，${imageUrls.size} 张图片`);
+    if (imageCount > 0) {
+        console.log(`准备打包：${totalPages} 个页面，${imageCount} 张图片`);
         
         downloadAllBtn.textContent = '准备打包...';
         downloadAllBtn.disabled = true;
         
         try {
             const zip = new JSZip();
+            zip.file('README.md', combinedMarkdown);
             
-            // Add markdown file with summary
-            const mdHeader = `<!-- 此文档包含 ${totalPages} 个页面和 ${imageUrls.size} 张图片 -->\n\n`;
-            zip.file('README.md', mdHeader + combinedMarkdown);
-            
-            // Create images folder and add all images
             const imgFolder = zip.folder('ocr_images');
-            let downloadedCount = 0;
-            let failedCount = 0;
             
-            for (const filename of imageUrls) {
-                try {
-                    downloadAllBtn.textContent = `下载图片 ${downloadedCount + 1}/${imageUrls.size}`;
-                    
-                    const response = await fetch(`/static/ocr_images/${filename}`);
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-                    const blob = await response.blob();
-                    imgFolder.file(filename, blob);
-                    downloadedCount++;
-                } catch (error) {
-                    console.error(`下载失败 ${filename}:`, error);
-                    failedCount++;
+            Object.entries(allImages).forEach(([filename, base64]) => {
+                const binary = atob(base64);
+                const array = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    array[i] = binary.charCodeAt(i);
                 }
-            }
-            
-            console.log(`图片下载完成：成功 ${downloadedCount}/${imageUrls.size}，失败 ${failedCount}`);
+                imgFolder.file(filename, array.buffer);
+            });
             
             // Generate and download zip
             downloadAllBtn.textContent = '生成压缩包...';

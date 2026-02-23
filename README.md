@@ -53,7 +53,7 @@ deploy.bat
 #### 3. 访问应用
 
 - 🌐 **前端界面**: http://localhost:8000
-- 🔌 **后端 API**: http://localhost:8080
+- 🔌 **后端 API**: http://localhost:8081
 
 > 详细的 Docker 部署文档请查看 [DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)
 
@@ -93,7 +93,7 @@ python server.py
 
 ### 本地开发
 - **Python**: 3.10+
-- **PaddleOCR-VL 服务**: 运行在 `http://localhost:8080`
+- **PaddleOCR-VL 服务**: 运行在 `http://localhost:8081`
 
 ---
 
@@ -208,7 +208,8 @@ python server.py
 ### 1. 前端无法连接到后端
 ```bash
 # 检查 PaddleOCR-VL 服务是否运行
-curl http://localhost:8080/health
+curl http://localhost:8081/health
+```
 
 # 检查网络连接
 docker compose exec pandocr-web curl http://paddleocr-vl-api:8080/health

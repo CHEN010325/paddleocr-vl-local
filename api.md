@@ -111,7 +111,7 @@ import base64
 import requests
 import pathlib
 
-API_URL = "http://localhost:8080/layout-parsing" # 服务URL
+API_URL = "http://localhost:8081/layout-parsing" # 服务URL
 
 image_path = "./demo.jpg"
 
@@ -164,7 +164,7 @@ for i, res in enumerate(result["layoutParsingResults"]):
 namespace fs = std::filesystem;
 
 int main() {
-    httplib::Client client("localhost", 8080);
+    httplib::Client client("localhost", 8081);
 
     const std::string filePath = "./demo.jpg";
 
@@ -261,7 +261,7 @@ import java.nio.file.Files;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-        String API_URL = "http://localhost:8080/layout-parsing";
+        String API_URL = "http://localhost:8081/layout-parsing";
         String imagePath = "./demo.jpg";
 
         File file = new File(imagePath);
@@ -345,7 +345,7 @@ import (
 )
 
 func main() {
-    API_URL := "http://localhost:8080/layout-parsing"
+    API_URL := "http://localhost:8081/layout-parsing"
     filePath := "./demo.jpg"
 
     fileBytes, err := ioutil.ReadFile(filePath)
@@ -480,7 +480,7 @@ using Newtonsoft.Json.Linq;
 
 class Program
 {
-    static readonly string API_URL = "http://localhost:8080/layout-parsing";
+    static readonly string API_URL = "http://localhost:8081/layout-parsing";
     static readonly string inputFilePath = "./demo.jpg";
 
     static async Task Main(string[] args)
@@ -546,7 +546,7 @@ class Program
 const fs = require('fs');
 const path = require('path');
 
-const API_URL = 'http://localhost:8080/layout-parsing';
+const API_URL = 'http://localhost:8081/layout-parsing';
 const imagePath = './demo.jpg';
 const fileType = 1;
 
@@ -597,7 +597,7 @@ axios.post(API_URL, payload)
 
 <pre id="__code_30"><nav class="md-code__nav"><button class="md-code__button" title="复制" data-clipboard-target="#__code_30 > code" data-md-type="copy"></button></nav><code class="language-php"><?php
 
-$API_URL = "http://localhost:8080/layout-parsing";
+$API_URL = "http://localhost:8081/layout-parsing";
 $image_path = "./demo.jpg";
 
 $image_data = base64_encode(file_get_contents($image_path));

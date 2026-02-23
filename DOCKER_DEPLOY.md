@@ -17,7 +17,7 @@
            ↓
 ┌─────────────────────┐
 │ paddleocr-vl-api    │ ← PaddleOCR-VL Pipeline
-│  文档解析服务        │   (端口 8080)
+│  文档解析服务        │   (端口 8081)
 └──────────┬──────────┘
            │
            ↓
@@ -46,14 +46,14 @@ docker compose ps
 ```
 NAME                   STATUS          PORTS
 paddleocr-vlm-server   Up (healthy)    
-paddleocr-vl-api       Up (healthy)    0.0.0.0:8080->8080/tcp
+paddleocr-vl-api       Up (healthy)    0.0.0.0:8081->8080/tcp
 pandocr-web            Up (healthy)    0.0.0.0:8000->8000/tcp
 ```
 
 ### 3. 访问应用
 
 - **前端界面**: http://localhost:8000
-- **PaddleOCR API**: http://localhost:8080
+- **PaddleOCR API**: http://localhost:8081
 
 ### 4. 查看日志
 
@@ -178,7 +178,7 @@ docker compose logs --tail=100 [服务名]
 手动测试健康检查端点：
 ```bash
 curl http://localhost:8000/
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 ```
 
 ## 📊 监控和维护

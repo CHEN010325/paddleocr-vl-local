@@ -54,15 +54,41 @@
                         <div class="ocr-options-vertical">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="chart-recognition-switch" />
-                                <span>启用图表解析</span>
+                                <span>图表解析</span>
                             </label>
                             <label class="checkbox-label">
                                 <input type="checkbox" id="doc-unwarping-switch" />
-                                <span>启用文档矫正</span>
+                                <span>文档矫正</span>
                             </label>
                             <label class="checkbox-label">
                                 <input type="checkbox" id="doc-orientation-switch" />
-                                <span>启用方向识别</span>
+                                <span>方向识别</span>
+                            </label>
+                            <hr class="options-divider">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="seal-recognition-switch" checked />
+                                <span>印章识别</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="format-content-switch" />
+                                <span>内容格式化</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="formula-number-switch" checked />
+                                <span>公式编号</span>
+                            </label>
+                            <hr class="options-divider">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="ignore-header-switch" checked />
+                                <span>忽略页眉</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="ignore-footer-switch" checked />
+                                <span>忽略页脚</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="ignore-number-switch" checked />
+                                <span>忽略页码</span>
                             </label>
                         </div>
                         <button id="start-btn" class="btn primary-btn full-width">开始解析</button>

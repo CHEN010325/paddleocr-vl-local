@@ -25,7 +25,7 @@
 │    - 请求代理和转换                           │
 │    - 图片存储管理                             │
 └──────────────┬──────────────────────────────┘
-               │ HTTP (Port 8080)
+               │ HTTP (Port 8081)
 ┌──────────────▼──────────────────────────────┐
 │      OCR 服务层 (paddleocr-vl-api)           │
 │    - 文档布局分析                             │
@@ -73,7 +73,7 @@
 **API 端点**:
 - `GET /` - 前端页面
 - `GET /api/models` - 模型列表（兼容性）
-- `POST /api/ocr` - OCR 处理接口
+- `POST /api/paddleocr-vl-1.5` - OCR 处理接口
 - `GET /static/*` - 静态资源
 
 ### 3. Docker 部署
@@ -148,7 +148,7 @@
 4. 用户点击"开始解析"
    ↓
 5. 逐个发送到后端
-   POST /api/ocr
+   POST /api/paddleocr-vl-1.5
    {
      image: "base64...",
      useLayoutDetection: true,

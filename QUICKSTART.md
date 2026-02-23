@@ -178,12 +178,14 @@ nvidia-smi
 # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
 ```
 
-### Q3: "端口 8000/8080 已被占用"
+### Q3: "端口 8000/8081 已被占用"
 **解决**: 
 ```bash
 # Windows
 netstat -ano | findstr :8000
+netstat -ano | findstr :8081
 taskkill /F /PID [PID号]
+```
 
 # Linux/macOS
 lsof -ti:8000 | xargs kill -9

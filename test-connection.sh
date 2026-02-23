@@ -14,8 +14,8 @@ else
 fi
 
 # 测试 PaddleOCR API
-echo "2️⃣  测试 PaddleOCR API (localhost:8080)..."
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health | grep -q "200"; then
+echo "2️⃣  测试 PaddleOCR API (localhost:8081)..."
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/health | grep -q "200"; then
     echo "   ✅ PaddleOCR API 正常"
 else
     echo "   ❌ PaddleOCR API 异常（可能正在启动中...）"

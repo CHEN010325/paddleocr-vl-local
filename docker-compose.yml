@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   # PaddleOCR-VL API 服务（后端核心）
   paddleocr-vl-api:
     image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-vl:${API_IMAGE_TAG_SUFFIX:-latest-offline}
     container_name: paddleocr-vl-api
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       paddleocr-vlm-server:
         condition: service_healthy
@@ -21,6 +19,12 @@ services:
     restart: unless-stopped
     environment:
       - VLM_BACKEND=${VLM_BACKEND:-vllm}
+    volumes:
+      # 持久化模型权重（布局检测模型等）
+      - ./model_cache:/home/paddleocr/.paddlex
+      - ./model_cache_ocr:/home/paddleocr/.paddleocr
+      # 挂载自定义配置文件，开启文档预处理器模型加载
+      - ./pipeline_config_vllm.yaml:/home/paddleocr/pipeline_config_vllm.yaml
     command: /bin/bash -c "paddlex --serve --pipeline /home/paddleocr/pipeline_config_${VLM_BACKEND}.yaml"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
@@ -30,10 +34,33 @@ services:
     networks:
       - paddleocr-network
 
+  rerank-api:
+    image: python:3.10-slim
+    container_name: rerank-api
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      /bin/bash -c "pip install fastapi uvicorn httpx requests pydantic &&
+      python rerank_server.py"
+    ports:
+      - "8002:8002"
+    environment:
+      - RERANKER_SERVICE_URL=http://reranker-server:8000/v1/score
+      - RERANKER_MODEL_NAME=Qwen/Qwen3-Reranker-0.6B
+    depends_on:
+      - reranker-server
+    networks:
+      - paddleocr-network
+
   # PaddleOCR VLM 推理服务器（VLLM 后端）
   paddleocr-vlm-server:
     image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-${VLM_BACKEND:-vllm}-server:${VLM_IMAGE_TAG_SUFFIX:-latest-offline}
     container_name: paddleocr-vlm-server
+    # 显式指定加载最新的 PaddleOCR-VL-1.5-0.9B 模型
+    command: paddleocr genai_server --model_name PaddleOCR-VL-1.5-0.9B --host 0.0.0.0 --port 8080 --backend vllm
+    environment:
+      - VLLM_GPU_MEMORY_UTILIZATION=0.5
     deploy:
       resources:
         reservations:
@@ -43,6 +70,10 @@ services:
               capabilities: [gpu]
     user: root
     restart: unless-stopped
+    volumes:
+      # 持久化模型权重，避免重复下载
+      - ./model_cache:/home/paddleocr/.paddlex
+      - ./model_cache_ocr:/home/paddleocr/.paddleocr
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
       interval: 30s
@@ -70,12 +101,47 @@ services:
     volumes:
       # 持久化 OCR 提取的图片
       - ocr_images:/app/static/ocr_images
+      # 挂载 Docker Socket 以管理其他容器
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - paddleocr-network
+    
+  # 排序模型服务器 (vLLM 量化版 Qwen3-Reranker-4B-GGUF)
+  reranker-server:
+    image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleocr-genai-vllm-server:latest-nvidia-gpu-sm120-offline
+    container_name: reranker-server
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./model_cache:/home/paddleocr/.paddlex
+      - ./model_cache_ocr:/home/paddleocr/.paddleocr
+    environment:
+      - VLM_BACKEND=vllm
+      - PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+    command: >
+      /bin/bash -c "vllm serve Qwen/Qwen3-Reranker-0.6B
+      --task score
+      --quantization fp8
+      --gpu-memory-utilization 0.2
+      --enforce-eager
+      --max-model-len 16384
+      --trust-remote-code
+      --host 0.0.0.0
+      --port 8000
+      --hf-overrides '{\"architectures\": [\"Qwen3ForSequenceClassification\"], \"classifier_from_token\": [\"no\", \"yes\"], \"is_original_qwen3_reranker\": true}'"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
     networks:
       - paddleocr-network
 

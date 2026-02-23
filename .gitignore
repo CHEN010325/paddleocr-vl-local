@@ -38,6 +38,8 @@ MANIFEST
 # Project specific
 static/ocr_images/*
 !static/ocr_images/.gitkeep
+model_cache/
+model_cache_ocr/
 ocr_results_*.md
 ocr_results_*.zip
 *.log
@@ -58,3 +60,5 @@ Thumbs.db
 # Docker
 .env
 
+
+ollama_storage/
