@@ -9,6 +9,7 @@ import io
 from PIL import Image
 from typing import List, Optional
 from pathlib import Path
+from pypdf import PdfReader, PdfWriter
 from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
@@ -284,6 +285,51 @@ class OCRRequest(BaseModel):
     maxPixels: Optional[int] = None
     visualize: Optional[bool] = None
 
+def build_pipeline_payload(request: OCRRequest, base64_data: str, file_type: int) -> dict:
+    payload = {
+        "file": base64_data,
+        "fileType": file_type,
+        "useLayoutDetection": request.useLayoutDetection,
+        "useDocUnwarping": request.useDocUnwarping,
+        "useDocOrientationClassify": request.useDocOrientationClassify,
+        "useChartRecognition": request.useChartRecognition,
+        "useSealRecognition": request.useSealRecognition,
+        "formatBlockContent": request.formatBlockContent,
+        "showFormulaNumber": request.showFormulaNumber,
+        "prettifyMarkdown": True
+    }
+    optional_params = [
+        "markdownIgnoreLabels", "layoutThreshold", "layoutNms",
+        "layoutUnclipRatio", "layoutMergeBboxesMode", "repetitionPenalty",
+        "temperature", "topP", "minPixels", "maxPixels", "visualize"
+    ]
+    for param in optional_params:
+        val = getattr(request, param)
+        if val is not None:
+            payload[param] = val
+    return payload
+
+def parse_pipeline_response(data: dict, image_prefix: str = "") -> dict:
+    if "result" not in data or "layoutParsingResults" not in data["result"]:
+        print(f"Unexpected Format: {data}")
+        raise HTTPException(status_code=500, detail="Unexpected response format from Pipeline")
+    results = data["result"]["layoutParsingResults"]
+    full_markdown = ""
+    all_images = {}
+    for res in results:
+        if "markdown" in res and "text" in res["markdown"]:
+            md_text = res["markdown"]["text"]
+            md_images = res["markdown"].get("images", {})
+            if md_images:
+                for img_path, img_base64 in md_images.items():
+                    if image_prefix:
+                        key = f"{image_prefix}_{img_path}"
+                    else:
+                        key = img_path
+                    all_images[key] = img_base64
+            full_markdown += md_text + "\n\n"
+    return {"markdown": full_markdown, "images": all_images}
+
 @app.post("/api/paddleocr-vl-1.5")
 async def proxy_ocr(request: OCRRequest):
     """Proxy request to PaddleOCR-VL Pipeline Service"""
@@ -320,30 +366,7 @@ async def proxy_ocr(request: OCRRequest):
             except Exception as gif_err:
                 print(f"GIF conversion skipped: {gif_err}")
 
-        # Construct Payload for the Official Pipeline API
-        payload = {
-            "file": base64_data,
-            "fileType": file_type, 
-            "useLayoutDetection": request.useLayoutDetection,
-            "useDocUnwarping": request.useDocUnwarping,
-            "useDocOrientationClassify": request.useDocOrientationClassify,
-            "useChartRecognition": request.useChartRecognition,
-            "useSealRecognition": request.useSealRecognition,
-            "formatBlockContent": request.formatBlockContent,
-            "showFormulaNumber": request.showFormulaNumber,
-            "prettifyMarkdown": True
-        }
-        
-        # Add optional parameters if provided
-        optional_params = [
-            "markdownIgnoreLabels", "layoutThreshold", "layoutNms", 
-            "layoutUnclipRatio", "layoutMergeBboxesMode", "repetitionPenalty", 
-            "temperature", "topP", "minPixels", "maxPixels", "visualize"
-        ]
-        for param in optional_params:
-            val = getattr(request, param)
-            if val is not None:
-                payload[param] = val
+        payload = build_pipeline_payload(request, base64_data, file_type)
         
         print(f"Sending request to Pipeline Service at {PADDLE_SERVICE_URL}...")
         # print(f"Payload keys: {list(payload.keys())}") # For debugging
@@ -363,36 +386,55 @@ async def proxy_ocr(request: OCRRequest):
                 raise HTTPException(status_code=resp.status_code, detail=f"Upstream error: {resp.text}")
             
             data = resp.json()
-            
-            # Parse Official Response Format
-            if "result" in data and "layoutParsingResults" in data["result"]:
-                results = data["result"]["layoutParsingResults"]
-                full_markdown = ""
-                all_images = {} # To hold all base64 images from all pages
-                
-                for res in results:
-                    if "markdown" in res and "text" in res["markdown"]:
-                        md_text = res["markdown"]["text"]
-                        md_images = res["markdown"].get("images", {})
-                        
-                        # Just collect images and keep original paths in markdown
-                        if md_images:
-                            for img_path, img_base64 in md_images.items():
-                                # We'll return the original path as key for the client to map
-                                all_images[img_path] = img_base64
-                        
-                        full_markdown += md_text + "\n\n"
-                
-                return {
-                    "markdown": full_markdown,
-                    "images": all_images
-                }
-            else:
-                print(f"Unexpected Format: {data}")
-                raise HTTPException(status_code=500, detail="Unexpected response format from Pipeline")
+            return parse_pipeline_response(data)
             
     except Exception as e:
         print(f"Proxy Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/paddleocr-vl-1.5/pagewise")
+async def proxy_ocr_pagewise(request: OCRRequest):
+    print(f"Received Pagewise OCR Request. Image size: {len(request.image)} bytes")
+    try:
+        base64_data = request.image
+        if "base64," in base64_data:
+            base64_data = base64_data.split("base64,")[1]
+        file_type = request.fileType
+        if file_type is None:
+            file_type = 0 if base64_data.startswith("JVBERi0") else 1
+        if file_type != 0:
+            return await proxy_ocr(request)
+        pdf_bytes = base64.b64decode(base64_data)
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        total_pages = len(reader.pages)
+        if total_pages <= 0:
+            raise HTTPException(status_code=400, detail="PDF 无有效页面")
+        print(f"Pagewise OCR start, total pages: {total_pages}")
+        merged_markdown = ""
+        merged_images = {}
+        async with httpx.AsyncClient(timeout=None) as client:
+            for index, page in enumerate(reader.pages):
+                writer = PdfWriter()
+                writer.add_page(page)
+                page_buffer = io.BytesIO()
+                writer.write(page_buffer)
+                page_base64 = base64.b64encode(page_buffer.getvalue()).decode("utf-8")
+                payload = build_pipeline_payload(request, page_base64, 0)
+                resp = await client.post(
+                    PADDLE_SERVICE_URL,
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                if resp.status_code != 200:
+                    print(f"Pagewise service error page {index+1}: {resp.text}")
+                    raise HTTPException(status_code=resp.status_code, detail=f"Upstream error: {resp.text}")
+                page_result = parse_pipeline_response(resp.json(), image_prefix=f"p{index+1}")
+                merged_markdown += page_result["markdown"]
+                if page_result["images"]:
+                    merged_images.update(page_result["images"])
+        return {"markdown": merged_markdown, "images": merged_images}
+    except Exception as e:
+        print(f"Pagewise Proxy Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
