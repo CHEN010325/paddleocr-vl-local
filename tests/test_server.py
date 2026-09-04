@@ -127,6 +127,7 @@ class ServerTaskApiTests(unittest.TestCase):
             "unlimited-ocr": "run_unlimited_ocr_request",
             "ovisocr2": "run_ovisocr2_request",
             "hpd-parsing": "run_hpd_parsing_request",
+            "navidc-ocr": "run_navidc_ocr_request",
         }
         with ExitStack() as stack:
             stack.enter_context(patch.object(self.server, "MODEL_CATALOG_IDS", list(runner_names)))
@@ -270,16 +271,28 @@ class ServerTaskApiTests(unittest.TestCase):
             patch.object(
                 self.server,
                 "MODEL_CATALOG_ENV",
-                "paddleocr-vl-1.6,pp-ocrv6,unlimited-ocr,ovisocr2",
+                "paddleocr-vl-1.6,pp-ocrv6,unlimited-ocr,ovisocr2,hpd-parsing,navidc-ocr",
             ),
             patch.dict(
                 os.environ,
-                {"PANDOCR_MODEL_CATALOG": "paddleocr-vl-1.6,pp-ocrv6,unlimited-ocr,ovisocr2"},
+                {
+                    "PANDOCR_MODEL_CATALOG": (
+                        "paddleocr-vl-1.6,pp-ocrv6,unlimited-ocr,ovisocr2,"
+                        "hpd-parsing,navidc-ocr"
+                    )
+                },
             ),
         ):
             self.assertEqual(
                 self.server.parse_model_catalog(),
-                ["paddleocr-vl-1.6", "pp-ocrv6", "unlimited-ocr", "ovisocr2"],
+                [
+                    "paddleocr-vl-1.6",
+                    "pp-ocrv6",
+                    "unlimited-ocr",
+                    "ovisocr2",
+                    "hpd-parsing",
+                    "navidc-ocr",
+                ],
             )
         self.assertEqual(
             {
@@ -287,12 +300,16 @@ class ServerTaskApiTests(unittest.TestCase):
                 "pp-ocrv6": self.server.services_for_model_deploy("pp-ocrv6"),
                 "unlimited-ocr": self.server.services_for_model_deploy("unlimited-ocr", "transformers"),
                 "ovisocr2": self.server.services_for_model_deploy("ovisocr2"),
+                "hpd-parsing": self.server.services_for_model_deploy("hpd-parsing"),
+                "navidc-ocr": self.server.services_for_model_deploy("navidc-ocr"),
             },
             {
                 "paddleocr-vl-1.6": ["paddleocr-vlm-server", "paddleocr-vl-api"],
                 "pp-ocrv6": ["paddleocr-ocr-api"],
                 "unlimited-ocr": ["unlimited-ocr-api"],
                 "ovisocr2": ["ovisocr2-api"],
+                "hpd-parsing": ["hpd-parsing-server", "hpd-parsing-api"],
+                "navidc-ocr": ["navidc-ocr-api"],
             },
         )
 
@@ -742,6 +759,100 @@ class ServerTaskApiTests(unittest.TestCase):
         self.assertEqual(detail["images"], {"ocr_images/a.jpg": "base64-image"})
         self.assertEqual(detail["ocrResults"], [{"markdown": {"text": "# Heavy Markdown"}}])
         self.assertEqual(detail["batches"][0]["markdown"], "Batch text")
+
+    def test_saved_task_exports_docx_xlsx_and_searchable_pdf(self):
+        task_id = "task_export"
+        source = io.BytesIO()
+        writer = PdfWriter()
+        writer.add_blank_page(width=300, height=420)
+        writer.write(source)
+        upload = self.client.post(
+            f"/api/tasks/{task_id}/source",
+            files={"file": ("sample.pdf", source.getvalue(), "application/pdf")},
+        )
+        self.assertEqual(upload.status_code, 200)
+        task = {
+            "id": task_id,
+            "name": "sample.pdf",
+            "mimeType": "application/pdf",
+            "sourceKind": "pdf",
+            "sourceUrl": upload.json()["url"],
+            "status": "completed",
+            "pageCount": 1,
+            "batches": [{"id": "b1", "status": "completed", "pageCount": 1}],
+            "markdown": "# Report\n\n| Name | Value |\n| --- | --- |\n| Alpha | 1 |",
+            "images": {},
+            "ocrResults": [{"sourcePage": 1, "ocrLines": [{"text": "Searchable export text"}]}],
+        }
+        self.assertEqual(self.client.put(f"/api/tasks/{task_id}", json=task).status_code, 200)
+
+        docx = self.client.get(f"/api/tasks/{task_id}/export/docx")
+        xlsx = self.client.get(f"/api/tasks/{task_id}/export/xlsx")
+        pdf = self.client.get(f"/api/tasks/{task_id}/export/searchable-pdf")
+        self.assertEqual(docx.status_code, 200)
+        self.assertEqual(xlsx.status_code, 200)
+        self.assertEqual(pdf.status_code, 200)
+        self.assertTrue(docx.content.startswith(b"PK"))
+        self.assertTrue(xlsx.content.startswith(b"PK"))
+        self.assertTrue(pdf.content.startswith(b"%PDF"))
+        self.assertIn("sample.docx", docx.headers["content-disposition"])
+        self.assertIn("sample.xlsx", xlsx.headers["content-disposition"])
+        self.assertIn("sample.searchable.pdf", pdf.headers["content-disposition"])
+        self.assertIn("Searchable export text", PdfReader(io.BytesIO(pdf.content)).pages[0].extract_text())
+
+        missing_format = self.client.get(f"/api/tasks/{task_id}/export/unknown")
+        self.assertEqual(missing_format.status_code, 422)
+
+    def test_task_export_openapi_declares_enum_and_binary_media_types(self):
+        response = self.client.get("/api/openapi.json")
+        self.assertEqual(response.status_code, 200)
+        operation = response.json()["paths"]["/api/tasks/{task_id}/export/{export_format}"]["get"]
+        export_parameter = next(
+            parameter
+            for parameter in operation["parameters"]
+            if parameter["name"] == "export_format"
+        )
+        self.assertEqual(
+            export_parameter["schema"]["enum"],
+            ["docx", "xlsx", "searchable-pdf"],
+        )
+        expected_media_types = {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/pdf",
+        }
+        response_content = operation["responses"]["200"]["content"]
+        self.assertEqual(set(response_content), expected_media_types)
+        self.assertNotIn("application/json", response_content)
+        for media_type in expected_media_types:
+            self.assertEqual(
+                response_content[media_type]["schema"],
+                {"type": "string", "format": "binary"},
+            )
+        self.assertTrue({"404", "422", "503"}.issubset(operation["responses"]))
+
+    def test_task_export_reports_missing_runtime_dependencies_as_503(self):
+        task_id = "task_export_dependencies"
+        task = {
+            "id": task_id,
+            "name": "dependency-check.pdf",
+            "status": "completed",
+            "pageCount": 1,
+            "markdown": "# Export dependency check",
+        }
+        self.assertEqual(self.client.put(f"/api/tasks/{task_id}", json=task).status_code, 200)
+
+        with patch.object(
+            self.server,
+            "task_exporter",
+            side_effect=self.server.ExportDependenciesUnavailable(
+                "Export dependencies are unavailable. Rebuild the pandocr-web image."
+            ),
+        ):
+            response = self.client.get(f"/api/tasks/{task_id}/export/docx")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("Rebuild the pandocr-web image", response.json()["detail"])
 
     def test_batch_markdown_only_task_is_marked_as_having_markdown(self):
         task = {

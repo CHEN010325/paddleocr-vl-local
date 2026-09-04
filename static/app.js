@@ -55,6 +55,8 @@ let renderedPPOCRVisualContext = '';
 let renderedJsonKey = '';
 let cachedJsonLines = [];
 let cachedJsonMaxLineLength = 0;
+let cachedMarkdownTableSource = null;
+let cachedMarkdownTables = [];
 let jsonRenderToken = 0;
 let ppocrScrollSyncFrame = 0;
 let sourceScrollSyncFrame = 0;
@@ -116,9 +118,16 @@ const els = {
     resetZoomBtn: document.getElementById('reset-zoom-btn'),
     resultTitle: document.getElementById('result-title'),
     startBtn: document.getElementById('start-btn'),
+    retryBtn: document.getElementById('retry-btn'),
     editBtn: document.getElementById('edit-btn'),
     copyBtn: document.getElementById('copy-btn'),
     downloadBtn: document.getElementById('download-btn'),
+    exportMenu: document.getElementById('export-menu'),
+    docxExportBtn: document.getElementById('docx-export-btn'),
+    xlsxExportBtn: document.getElementById('xlsx-export-btn'),
+    searchPdfExportBtn: document.getElementById('search-pdf-export-btn'),
+    htmlExportBtn: document.getElementById('html-export-btn'),
+    csvExportBtn: document.getElementById('csv-export-btn'),
     markdownView: document.getElementById('markdown-view'),
     jsonView: document.getElementById('json-view'),
     chartRecognitionSwitch: document.getElementById('chart-recognition-switch'),
@@ -197,9 +206,15 @@ function setupEventListeners() {
         }
         processActiveTask();
     });
+    els.retryBtn?.addEventListener('click', retryFailedBatches);
     els.editBtn?.addEventListener('click', startMarkdownEdit);
     els.copyBtn.addEventListener('click', copyActiveResult);
     els.downloadBtn.addEventListener('click', downloadActiveTask);
+    els.docxExportBtn?.addEventListener('click', () => downloadTaskServerExport('docx', 'docx', els.docxExportBtn));
+    els.xlsxExportBtn?.addEventListener('click', () => downloadTaskServerExport('xlsx', 'xlsx', els.xlsxExportBtn));
+    els.searchPdfExportBtn?.addEventListener('click', () => downloadTaskServerExport('searchable-pdf', 'searchable.pdf', els.searchPdfExportBtn));
+    els.htmlExportBtn?.addEventListener('click', downloadActiveTaskAsHtml);
+    els.csvExportBtn?.addEventListener('click', downloadActiveTaskTablesAsCsv);
     els.prevPageBtn.addEventListener('click', () => changePdfPage(-1));
     els.nextPageBtn.addEventListener('click', () => changePdfPage(1));
     els.zoomInBtn.addEventListener('click', () => changeZoom(0.15));
@@ -471,6 +486,13 @@ async function apiFetch(url, options = {}) {
     };
     let response = await fetch(url, requestOptions);
     if (response.status !== 401 || !isLocalApiUrl(url)) return response;
+    let detail = '';
+    try {
+        detail = String((await response.clone().json())?.detail || '');
+    } catch (error) {
+        // Non-JSON 401 responses are handled by the normal error path.
+    }
+    if (detail && detail !== 'Missing or invalid API token') return response;
 
     const token = window.prompt(t('请输入 PaddleOCR Local API Token'));
     if (!token) return response;
@@ -933,22 +955,50 @@ function renderGpuPreflightPanel() {
 
     const gpu = preflight.gpus?.[0] || {};
     const compatibility = preflight.models?.[selectedModelId] || {};
+    const hardwareNames = (preflight.hardwareCompatibleModelIds || [])
+        .map((id) => availableModels.find((model) => model.id === id))
+        .filter(Boolean)
+        .map(modelDisplayName);
     const runnableNames = (preflight.runnableModelIds || [])
         .map((id) => availableModels.find((model) => model.id === id))
         .filter(Boolean)
         .map(modelDisplayName);
     const memory = `${gpu.name || 'GPU'} · ${gpu.totalMiB || 0} MiB ${t('显存')} · ${gpu.freeMiB || 0} MiB ${t('当前空闲')}`;
+    const hardware = `${t('硬件兼容模型')}：${hardwareNames.join('、') || t('无')}`;
     const runnable = `${t('可运行模型')}：${runnableNames.join('、') || t('无')}`;
+    const recommendedModel = availableModels.find((model) => model.id === preflight.recommendedModelId);
+    const recommendation = recommendedModel
+        ? `${t('推荐模型')}：${modelDisplayName(recommendedModel)}`
+        : '';
     const unsupported = compatibility.supported === false
         ? t('当前模型至少需要 {memory} MiB 显存，不能在此显卡启动', { memory: compatibility.minimumMiB || 0 })
         : '';
+    const selectedModelReady = isModelRuntimeReady(selectedModelId);
+    const insufficientFree = compatibility.supported !== false
+        && compatibility.availableNow === false
+        && !selectedModelReady
+        ? t('当前空闲显存不足：启动此模型至少需要 {memory} MiB', { memory: compatibility.minimumFreeMiB || compatibility.minimumMiB || 0 })
+        : '';
     const lowMemory = compatibility.supported !== false
+        && (compatibility.availableNow !== false || selectedModelReady)
         && Array.isArray(compatibility.lowMemoryEnv)
         && compatibility.lowMemoryEnv.length
         ? `${t('低显存参数')}：${compatibility.lowMemoryEnv.join('；')}`
         : '';
-    if (!compatibility.supported || compatibility.level === 'low-memory') panel.classList.add('warning');
-    panel.textContent = [memory, runnable, unsupported, lowMemory].filter(Boolean).join('  |  ');
+    if (!compatibility.supported || insufficientFree || compatibility.level === 'low-memory') panel.classList.add('warning');
+    panel.textContent = [memory, hardware, runnable, recommendation, unsupported, insufficientFree, lowMemory].filter(Boolean).join('  |  ');
+    if (recommendedModel && recommendedModel.id !== selectedModelId) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'gpu-recommendation-button';
+        button.textContent = t('使用推荐模型');
+        button.addEventListener('click', async () => {
+            if (!els.modelSelect) return;
+            els.modelSelect.value = recommendedModel.id;
+            await handleModelSelectionChange();
+        });
+        panel.appendChild(button);
+    }
 }
 
 function sleep(ms) {
@@ -1129,7 +1179,24 @@ function applySelectedModelToTask(task) {
 }
 
 async function saveTask(task, { includeResults = true } = {}) {
+    syncTaskCompletedPages(task);
     await saveTaskToServer(task, { includeResults });
+}
+
+function completedPagesFromBatches(task) {
+    if (!Array.isArray(task?.batches) || task.batches.length === 0) {
+        return Number(task?.completedPages || 0);
+    }
+    return task.batches
+        .filter((batch) => batch?.status === 'completed')
+        .reduce((total, batch) => total + Math.max(0, Number(batch.pageCount || 0)), 0);
+}
+
+function syncTaskCompletedPages(task) {
+    if (task && Array.isArray(task.batches) && task.batches.length > 0) {
+        task.completedPages = completedPagesFromBatches(task);
+    }
+    return Number(task?.completedPages || 0);
 }
 
 async function saveTaskToServer(task, { includeResults = true } = {}) {
@@ -2955,7 +3022,10 @@ function shouldResumeTask(task) {
 
 function isTaskActivelyProcessing(task) {
     return task?.status === 'processing'
-        || Boolean(task?.batches?.some((batch) => batch.status === 'processing'));
+        || Boolean(task?.batches?.some((batch) => batch.status === 'processing'))
+        // Keep the task list in sync during the short window where the
+        // in-memory task status has not yet been persisted/refreshed.
+        || Boolean(task?.id && processingTaskId === task.id && isProcessing);
 }
 
 function historyMutationsLocked() {
@@ -3452,6 +3522,35 @@ function updateActionState(task) {
     }
     updateCopyButtonState(task);
     els.downloadBtn.disabled = !hasResult;
+    const hasMarkdown = Boolean(visibleTaskMarkdown(task));
+    if (els.docxExportBtn) els.docxExportBtn.disabled = !hasMarkdown;
+    if (els.searchPdfExportBtn) {
+        els.searchPdfExportBtn.disabled = !Boolean(hasMarkdown && (task?.sourceUrl || task?.sourceDataUrl));
+    }
+    if (els.htmlExportBtn) els.htmlExportBtn.disabled = !hasMarkdown;
+    if (els.csvExportBtn) {
+        const tableCount = cachedExtractMarkdownTables(visibleTaskMarkdown(task)).length;
+        els.csvExportBtn.classList.toggle('hidden', tableCount === 0);
+        els.csvExportBtn.disabled = tableCount === 0;
+        els.csvExportBtn.title = tableCount > 0
+            ? t('导出 {count} 个表格为 CSV', { count: tableCount })
+            : t('没有可导出的表格');
+        if (els.xlsxExportBtn) {
+            els.xlsxExportBtn.classList.toggle('hidden', tableCount === 0);
+            els.xlsxExportBtn.disabled = tableCount === 0;
+            els.xlsxExportBtn.title = tableCount > 0
+                ? t('导出 {count} 个表格为 XLSX', { count: tableCount })
+                : t('没有可导出的表格');
+        }
+    }
+    if (els.retryBtn) {
+        const failedCount = countFailedBatches(task);
+        els.retryBtn.classList.toggle('hidden', failedCount === 0);
+        els.retryBtn.disabled = historyMutationsLocked() || !modelReady || failedCount === 0;
+        els.retryBtn.title = failedCount > 0
+            ? t('{count} 个失败批次可单独重试', { count: failedCount })
+            : '';
+    }
     const startLabel = startButtonLabel(task);
     const showProcessing = (isProcessing && task?.status === 'processing') || modelStarting;
     const startButtonHtml = canCancel
@@ -3463,6 +3562,39 @@ function updateActionState(task) {
         els.startBtn.innerHTML = startButtonHtml;
         els.startBtn.dataset.renderedHtml = startButtonHtml;
     }
+}
+
+function countFailedBatches(task) {
+    return Array.isArray(task?.batches)
+        ? task.batches.filter((batch) => batch?.status === 'error').length
+        : 0;
+}
+
+function prepareFailedBatchesForRetry(task) {
+    if (!task || !Array.isArray(task.batches)) return 0;
+    const failed = task.batches.filter((batch) => batch?.status === 'error');
+    failed.forEach((batch) => {
+        batch.status = 'pending';
+        batch.error = null;
+        batch.markdown = '';
+    });
+    if (failed.length > 0) {
+        task.status = 'pending';
+        task.error = null;
+        task.updatedAt = Date.now();
+    }
+    return failed.length;
+}
+
+async function retryFailedBatches() {
+    const task = getActiveTask();
+    if (!task || historyMutationsLocked()) return false;
+    const count = prepareFailedBatchesForRetry(task);
+    if (count === 0) return false;
+    rebuildTaskMarkdownFromBatches(task);
+    await saveTask(task);
+    refreshTaskUi(task);
+    return processTask(task, { confirmCompleted: false });
 }
 
 
@@ -3552,6 +3684,179 @@ async function downloadActiveTask() {
     zip.file('README.md', rewritten);
     const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
     downloadBlob(blob, safeDownloadName(task.name, 'zip'));
+}
+
+function imageMimeTypeForPath(path) {
+    const extension = String(path || '').split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
+    return ({
+        avif: 'image/avif',
+        gif: 'image/gif',
+        jpeg: 'image/jpeg',
+        jpg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp'
+    })[extension] || 'application/octet-stream';
+}
+
+function embedTaskImagesInMarkdown(task, markdown = visibleTaskMarkdown(task)) {
+    let embedded = normalizeOCRMarkdown(markdown || '');
+    Object.entries(task?.images || {}).forEach(([path, payload]) => {
+        const value = String(payload || '');
+        const dataUri = value.startsWith('data:')
+            ? value
+            : `data:${imageMimeTypeForPath(path)};base64,${value}`;
+        embedded = embedded.split(path).join(dataUri);
+    });
+    return embedded;
+}
+
+function standaloneHtmlForTask(task) {
+    const title = escapeHtml(task?.name || 'PaddleOCR Local export');
+    const model = escapeHtml(task?.modelName || task?.modelId || 'PaddleOCR Local');
+    const body = renderMarkdownHtml(embedTaskImagesInMarkdown(task));
+    return `<!doctype html>
+<html lang="${currentLanguage === 'en' ? 'en' : 'zh-CN'}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{max-width:980px;margin:0 auto;padding:40px 24px;color:#172033;background:#fff;font:16px/1.72 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}header{padding-bottom:18px;margin-bottom:28px;border-bottom:1px solid #d9e1ee}header h1{margin:0 0 6px;font-size:24px}header p{margin:0;color:#667085;font-size:13px}img{max-width:100%;height:auto}table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse}th,td{padding:8px 10px;border:1px solid #cfd8e6;text-align:left}pre{overflow:auto;padding:14px;border-radius:8px;background:#f5f7fb}code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}blockquote{margin-left:0;padding-left:16px;border-left:4px solid #b8c7dd;color:#526076}a{color:#0b6ee8}hr{border:0;border-top:1px solid #d9e1ee}
+</style>
+</head>
+<body>
+<header><h1>${title}</h1><p>${model} · PaddleOCR Local</p></header>
+<main>${body}</main>
+</body>
+</html>`;
+}
+
+function downloadActiveTaskAsHtml() {
+    const task = getActiveTask();
+    if (!task || !visibleTaskMarkdown(task)) return;
+    const html = standaloneHtmlForTask(task);
+    downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), safeDownloadName(task.name, 'html'));
+}
+
+async function downloadTaskServerExport(format, extension, button = null) {
+    const task = getActiveTask();
+    if (!task?.id) return;
+    const previousDisabled = Boolean(button?.disabled);
+    if (button) button.disabled = true;
+    try {
+        const response = await apiFetch(`${API_BASE}/tasks/${encodeURIComponent(task.id)}/export/${format}`);
+        if (!response.ok) {
+            throw new Error(t('导出失败：{detail}', { detail: await responseErrorText(response) }));
+        }
+        downloadBlob(await response.blob(), safeDownloadName(task.name, extension));
+        if (els.exportMenu) els.exportMenu.open = false;
+    } catch (error) {
+        console.error(error);
+        alert(error.message || t('导出失败，请稍后重试。'));
+    } finally {
+        if (button) button.disabled = previousDisabled;
+        updateActionState(getActiveTask());
+    }
+}
+
+function splitMarkdownTableRow(line) {
+    let text = String(line || '').trim();
+    if (text.startsWith('|')) text = text.slice(1);
+    if (text.endsWith('|') && !pipeIsEscaped(text, text.length - 1)) text = text.slice(0, -1);
+    const cells = [];
+    let cell = '';
+    for (const character of text) {
+        if (character === '|') {
+            let trailingBackslashes = 0;
+            for (let index = cell.length - 1; index >= 0 && cell[index] === '\\'; index -= 1) {
+                trailingBackslashes += 1;
+            }
+            if (trailingBackslashes % 2 === 1) {
+                cell = `${cell.slice(0, -1)}|`;
+            } else {
+                cells.push(cell.trim());
+                cell = '';
+            }
+        } else {
+            cell += character;
+        }
+    }
+    cells.push(cell.trim());
+    return cells;
+}
+
+function pipeIsEscaped(text, index) {
+    let backslashes = 0;
+    for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
+        backslashes += 1;
+    }
+    return backslashes % 2 === 1;
+}
+
+function isMarkdownTableSeparator(line) {
+    const cells = splitMarkdownTableRow(line);
+    return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, '')));
+}
+
+function extractMarkdownTables(markdown) {
+    const lines = normalizeOCRMarkdown(markdown || '').split('\n');
+    const tables = [];
+    let inFence = false;
+    for (let index = 0; index < lines.length - 1; index += 1) {
+        if (/^\s*(```|~~~)/.test(lines[index])) {
+            inFence = !inFence;
+            continue;
+        }
+        if (inFence || !lines[index].includes('|') || !isMarkdownTableSeparator(lines[index + 1])) continue;
+        const header = splitMarkdownTableRow(lines[index]);
+        if (header.length < 2) continue;
+        const rows = [header];
+        index += 2;
+        while (index < lines.length && lines[index].includes('|') && !/^\s*(```|~~~)/.test(lines[index])) {
+            const row = splitMarkdownTableRow(lines[index]);
+            if (row.length < 2) break;
+            while (row.length < header.length) row.push('');
+            rows.push(row.slice(0, header.length));
+            index += 1;
+        }
+        index -= 1;
+        tables.push(rows);
+    }
+    return tables;
+}
+
+function cachedExtractMarkdownTables(markdown) {
+    const source = String(markdown || '');
+    if (source === cachedMarkdownTableSource) return cachedMarkdownTables;
+    cachedMarkdownTableSource = source;
+    cachedMarkdownTables = extractMarkdownTables(source);
+    return cachedMarkdownTables;
+}
+
+function markdownTableToCsv(rows) {
+    return rows.map((row) => row.map((cell) => {
+        let value = String(cell ?? '').replace(/<br\s*\/?>/gi, '\n');
+        if (/^[=+\-@]/.test(value)) value = `'${value}`;
+        return `"${value.replace(/"/g, '""')}"`;
+    }).join(',')).join('\r\n');
+}
+
+async function downloadActiveTaskTablesAsCsv() {
+    const task = getActiveTask();
+    if (!task) return;
+    const tables = cachedExtractMarkdownTables(visibleTaskMarkdown(task));
+    if (tables.length === 0) return;
+    if (tables.length === 1) {
+        const csv = `\ufeff${markdownTableToCsv(tables[0])}`;
+        downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), safeDownloadName(task.name, 'csv'));
+        return;
+    }
+    const zip = new JSZip();
+    tables.forEach((table, index) => {
+        zip.file(`table-${index + 1}.csv`, `\ufeff${markdownTableToCsv(table)}`);
+    });
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+    downloadBlob(blob, safeDownloadName(task.name, 'tables.zip'));
 }
 
 async function clearHistory() {
@@ -3925,9 +4230,7 @@ const unlimitedOCRTitleLabels = new Set(['title', 'section_title']);
 function normalizeMarkdownNewlines(markdown) {
     return String(markdown)
         .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .replace(/\\r\\n/g, '\n')
-        .replace(/\\n/g, '\n');
+        .replace(/\r/g, '\n');
 }
 
 function compactMarkdownBlock(text) {
@@ -4879,7 +5182,7 @@ function compactOCRJsonResult(pageResult, batchOrId, pageIndex = 0) {
     const batch = typeof batchOrId === 'object' ? batchOrId : null;
     const batchId = batch?.id || batchOrId;
     const compact = stripLargeOCRFields(pageResult);
-    if (batch && ['pp-ocrv6', 'unlimited-ocr', OVIS_OCR_MODEL_ID, HPD_PARSING_MODEL_ID].includes(compact?.parser)) {
+    if (batch) {
         compact.sourcePage = Number(batch.startPage || 1) + pageIndex;
         compact.batchId = batch.id;
     }
@@ -5016,7 +5319,7 @@ function taskIcon(task) {
 }
 
 function statusText(task) {
-    const donePages = task.batches?.filter((batch) => batch.status === 'completed').reduce((sum, batch) => sum + batch.pageCount, 0) || task.completedPages || 0;
+    const donePages = completedPagesFromBatches(task);
     if (task.status === 'completed') return t('完成');
     if (isTaskActivelyProcessing(task)) return t('{done}/{total} 解析中', { done: donePages, total: task.pageCount || 1 });
     if (shouldResumeTask(task)) return t('{done}/{total} 可继续', { done: donePages, total: task.pageCount || 1 });

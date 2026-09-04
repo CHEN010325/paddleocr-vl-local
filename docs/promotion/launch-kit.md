@@ -27,9 +27,9 @@ Show HN: PaddleOCR Local – a local workbench for five OCR models
 ```text
 I built PaddleOCR Local because running a document model is usually much harder than trying its demo.
 
-It provides one local-first WebUI for PaddleOCR-VL 1.6, PP-OCRv6, Unlimited-OCR, OvisOCR2, and HPD-Parsing. It accepts PDFs, images, Word, and PowerPoint, keeps task history locally, switches models on a single GPU, performs VRAM preflight checks, and exports Markdown/JSON.
+It provides one local-first WebUI for PaddleOCR-VL 1.6, PP-OCRv6, OvisOCR2, HPD-Parsing, and NaviDC-OCR. It accepts PDFs, images, Word, and PowerPoint, keeps task history locally, switches models on a single GPU, performs VRAM preflight checks, and exports editable DOCX, searchable PDF, HTML, Markdown/JSON, and table CSV/XLSX.
 
-The latest work adds a stable /api/parse endpoint, a CLI, watch-folder automation, and safer single-GPU switching. Apple Silicon is supported through native/MLX paths.
+The latest work adds failed-batch-only retry, hardware-aware model recommendations, a stable /api/parse endpoint, a CLI, and watch-folder automation. Apple Silicon is supported through native/MLX paths.
 
 It is Apache-2.0 and does not enable document telemetry. Model quality varies by document and hardware, so the repository includes a reproducible benchmark/reporting format instead of claiming a universal winner.
 
@@ -49,7 +49,7 @@ PaddleOCR Local: self-hosted PDF/Office to Markdown with five switchable OCR mod
 ```text
 I have been building a local-first document parsing workbench for people who want OCR without uploading private files to a cloud service.
 
-It supports five independent models behind one UI, PDF/image/Word/PowerPoint input, local task history, Markdown/JSON export, single-GPU model switching, and VRAM checks. Windows/Linux NVIDIA and Apple Silicon paths are documented.
+It supports five independent models behind one UI, PDF/image/Word/PowerPoint input, local task history, failed-batch retry, editable/searchable exports, single-GPU model switching, and VRAM checks. Windows/Linux NVIDIA and Apple Silicon paths are documented.
 
 I recently added a CLI and watch-folder mode. There is no default telemetry. Public exposure still requires an API token, TLS, and the usual reverse-proxy controls.
 
@@ -71,9 +71,9 @@ I would especially appreciate reproducible hardware reports and feedback on the 
 ```text
 最近把自己的 PaddleOCR Local 做了一轮整理。
 
-目前支持 PaddleOCR-VL 1.6、PP-OCRv6、Unlimited-OCR、OvisOCR2、HPD-Parsing，输入支持 PDF、图片、Word、PPT。单卡机器只启动当前模型，切换时自动释放显存；Windows NVIDIA 和 Apple Silicon 都有一键脚本。
+目前支持 PaddleOCR-VL 1.6、PP-OCRv6、OvisOCR2、HPD-Parsing、NaviDC-OCR，输入支持 PDF、图片、Word、PPT。单卡机器只启动当前模型，切换时自动释放显存；Windows NVIDIA 和 Apple Silicon 都有一键脚本。
 
-新增加了统一 /api/parse、CLI 和 Watch Folder。项目不会默认上传文档或收集遥测。
+新增加了失败批次单独重试、硬件推荐，以及 DOCX、可搜索 PDF、HTML、CSV/XLSX 导出；也提供统一 /api/parse、CLI 和 Watch Folder。项目不会默认上传文档或收集遥测。
 
 这次特别想征集不同显卡和 Apple 芯片的兼容报告。仓库里提供了 Hardware Report 表单和记录规范，敏感文档不用上传。
 
@@ -91,7 +91,7 @@ GitHub：https://github.com/CHEN010325/paddleocr-local
 ## 上游收录请求
 
 ```text
-Hi, I maintain PaddleOCR Local, an Apache-2.0 local-first WebUI and CLI that integrates <MODEL> with four other OCR/document models. It includes on-demand deployment, single-GPU switching, local task history, and a documented hardware-report format.
+Hi, I maintain PaddleOCR Local, an Apache-2.0 local-first WebUI and CLI that integrates <MODEL> alongside four other OCR/document models. It includes on-demand deployment, single-GPU switching, local task history, and a documented hardware-report format.
 
 Would you consider listing it in your community tools/ecosystem section? I am happy to submit a small documentation PR and keep the integration current.
 

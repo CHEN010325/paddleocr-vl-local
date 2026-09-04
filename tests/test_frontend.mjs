@@ -147,6 +147,15 @@ test('model and task normalization preserve the newest meaningful state', () => 
     assert.equal(completed.status, 'completed');
 });
 
+test('task list status follows the active processing task marker', () => {
+    evaluate("isProcessing=true; processingTaskId='active-task'");
+    assert.equal(
+        evaluate("statusText({id:'active-task',status:'pending',pageCount:5,batches:[]})"),
+        '0/5 解析中'
+    );
+    evaluate("isProcessing=false; processingTaskId=null");
+});
+
 
 test('runtime readiness requires the selected model to be uniquely running and ready', () => {
     evaluate(`
@@ -198,6 +207,42 @@ test('PDF batching covers every page without oversized final ranges', () => {
     assert.equal(evaluate("clampPdfBatchSize('invalid')"), 1);
 });
 
+test('failed batches can be reset without touching completed results', () => {
+    const task = {
+        status: 'error',
+        error: 'page failed',
+        completedPages: 0,
+        markdown: '# done\n\n# partial',
+        batches: [
+            { id: 'done', status: 'completed', pageCount: 2, markdown: '# done' },
+            { id: 'failed', status: 'error', pageCount: 1, error: 'timeout', markdown: '# partial' },
+            { id: 'pending', status: 'pending', pageCount: 1, markdown: '' }
+        ]
+    };
+    assert.equal(evaluate('countFailedBatches(' + JSON.stringify(task) + ')'), 1);
+    assert.equal(evaluate('completedPagesFromBatches(' + JSON.stringify(task) + ')'), 2);
+    const retried = evaluate(`(() => {
+        const task = ${JSON.stringify(task)};
+        const count = prepareFailedBatchesForRetry(task);
+        rebuildTaskMarkdownFromBatches(task);
+        syncTaskCompletedPages(task);
+        return { count, task, persisted: taskForPersistence(task) };
+    })()`);
+    assert.equal(retried.count, 1);
+    assert.equal(retried.task.status, 'pending');
+    assert.equal(retried.task.error, null);
+    assert.equal(retried.task.batches[0].status, 'completed');
+    assert.equal(retried.task.batches[0].markdown, '# done');
+    assert.equal(retried.task.batches[1].status, 'pending');
+    assert.equal(retried.task.batches[1].error, null);
+    assert.equal(retried.task.batches[1].markdown, '');
+    assert.equal(retried.task.markdown.trim(), '# done');
+    assert.equal(retried.task.markdown.includes('# partial'), false);
+    assert.equal(retried.task.completedPages, 2);
+    assert.equal(retried.persisted.completedPages, 2);
+    assert.equal(retried.persisted.markdown.trim(), '# done');
+});
+
 
 test('task persistence strips transient payloads and status placeholders', () => {
     const metadataOnly = plain(evaluate(`taskForPersistence({
@@ -231,6 +276,25 @@ test('task persistence strips transient payloads and status placeholders', () =>
         )`),
         'Final text'
     );
+});
+
+
+test('all later-batch results keep absolute source pages regardless of parser', () => {
+    const navidc = plain(evaluate(`compactOCRJsonResult(
+        { parser: 'navidc-ocr', pageIndex: 2, markdown: { text: 'later page', images: {} } },
+        { id: 'navidc-batch-2', startPage: 6 },
+        2
+    )`));
+    const paddle = plain(evaluate(`compactOCRJsonResult(
+        { page_index: 0, markdown: { text: 'default model page', images: {} } },
+        { id: 'paddle-batch-2', startPage: 3 },
+        0
+    )`));
+
+    assert.equal(navidc.sourcePage, 8);
+    assert.equal(navidc.batchId, 'navidc-batch-2');
+    assert.equal(paddle.sourcePage, 3);
+    assert.equal(paddle.batchId, 'paddle-batch-2');
 });
 
 
@@ -375,4 +439,120 @@ test('binary and filename helpers produce safe deterministic values', () => {
         evaluate(`imageValueToSrc('SGVsbG8=')`),
         'data:image/jpeg;base64,SGVsbG8='
     );
+});
+
+test('standalone HTML export embeds images and escapes metadata', () => {
+    const markdown = evaluate(`embedTaskImagesInMarkdown({
+        markdown: '![figure](ocr_images/figure.png)',
+        images: { 'ocr_images/figure.png': 'aGVsbG8=' }
+    })`);
+    assert.equal(markdown.includes('data:image/png;base64,aGVsbG8='), true);
+    assert.equal(evaluate("imageMimeTypeForPath('figure.JPG')"), 'image/jpeg');
+    assert.equal(evaluate("imageMimeTypeForPath('figure.unknown')"), 'application/octet-stream');
+
+    const html = evaluate(`standaloneHtmlForTask({
+        name: '<unsafe>.pdf',
+        modelName: 'Model & One',
+        markdown: '# Title',
+        images: {}
+    })`);
+    assert.equal(html.startsWith('<!doctype html>'), true);
+    assert.equal(html.includes('&lt;unsafe&gt;.pdf'), true);
+    assert.equal(html.includes('Model &amp; One'), true);
+    assert.equal(html.includes('<meta charset="utf-8">'), true);
+});
+
+test('Markdown tables export to standards-compliant CSV', () => {
+    const tables = plain(evaluate(`extractMarkdownTables([
+        '| Name | Note |',
+        '| --- | :---: |',
+        '| Alice | a\\\\|b |',
+        '| Bob | says "hi" |',
+        '| Formula | =2+2 |',
+        '',
+        '~~~text',
+        '| ignored | table |',
+        '| --- | --- |',
+        '~~~'
+    ].join('\\n'))`));
+    assert.equal(tables.length, 1);
+    assert.deepEqual(tables[0], [
+        ['Name', 'Note'],
+        ['Alice', 'a|b'],
+        ['Bob', 'says "hi"'],
+        ['Formula', '=2+2']
+    ]);
+    const csv = evaluate(`markdownTableToCsv(${JSON.stringify(tables[0])})`);
+    assert.equal(csv, '"Name","Note"\r\n"Alice","a|b"\r\n"Bob","says ""hi"""\r\n"Formula","\'=2+2"');
+    evaluate("cachedMarkdownTableSource=null;cachedMarkdownTables=[]");
+    const first = evaluate("cachedExtractMarkdownTables('| A | B |\\n| --- | --- |\\n| 1 | 2 |')");
+    const second = evaluate("cachedExtractMarkdownTables('| A | B |\\n| --- | --- |\\n| 1 | 2 |')");
+    assert.equal(first, second);
+});
+
+test('Markdown table parsing preserves literal backslashes and pipe escape parity', () => {
+    const pathRow = String.raw`| Path | C:\temp\file.txt |`;
+    const formulaRow = String.raw`| Formula | \alpha + \beta |`;
+    const escapedPipeRow = String.raw`| Escaped | x\|y |`;
+    const evenBackslashesRow = String.raw`| Even | left\\|right |`;
+    const oddBackslashesRow = String.raw`| Odd | left\\\|right | tail |`;
+    const escapedTrailingPipeRow = String.raw`| Tail | value\|`;
+
+    assert.deepEqual(
+        plain(evaluate(`splitMarkdownTableRow(${JSON.stringify(pathRow)})`)),
+        ['Path', String.raw`C:\temp\file.txt`]
+    );
+    assert.deepEqual(
+        plain(evaluate(`splitMarkdownTableRow(${JSON.stringify(formulaRow)})`)),
+        ['Formula', String.raw`\alpha + \beta`]
+    );
+    assert.deepEqual(
+        plain(evaluate(`splitMarkdownTableRow(${JSON.stringify(escapedPipeRow)})`)),
+        ['Escaped', 'x|y']
+    );
+    assert.deepEqual(
+        plain(evaluate(`splitMarkdownTableRow(${JSON.stringify(evenBackslashesRow)})`)),
+        ['Even', String.raw`left\\`, 'right']
+    );
+    assert.deepEqual(
+        plain(evaluate(`splitMarkdownTableRow(${JSON.stringify(oddBackslashesRow)})`)),
+        ['Odd', String.raw`left\\|right`, 'tail']
+    );
+    assert.deepEqual(
+        plain(evaluate(`splitMarkdownTableRow(${JSON.stringify(escapedTrailingPipeRow)})`)),
+        ['Tail', 'value|']
+    );
+});
+
+test('Markdown newline normalization changes real newlines but preserves literal slash sequences', () => {
+    const windowsPath = String.raw`C:\new\report`;
+    const literalEscapes = String.raw`before\nafter\r\nend`;
+    assert.equal(
+        evaluate(`normalizeMarkdownNewlines(${JSON.stringify(windowsPath)})`),
+        windowsPath
+    );
+    assert.equal(
+        evaluate(`normalizeMarkdownNewlines(${JSON.stringify(literalEscapes)})`),
+        literalEscapes
+    );
+    assert.equal(evaluate("normalizeMarkdownNewlines('a\\r\\nb\\rc')"), 'a\nb\nc');
+});
+
+test('server exports download the requested format and surface API errors', async () => {
+    evaluate(`
+        tasks=[{id:'task-export',name:'sample.pdf',markdown:'# Result',sourceUrl:'/api/tasks/task-export/source',batches:[]}];
+        activeTaskId='task-export';
+        globalThis.exportCapture=null;
+        globalThis.exportAlert=null;
+        downloadBlob=(blob,name)=>{globalThis.exportCapture={size:blob.size,name}};
+        updateActionState=()=>{};
+        alert=(message)=>{globalThis.exportAlert=message};
+        apiFetch=async (url)=>({ok:true,blob:async()=>new Blob(['docx']),url});
+    `);
+    await evaluate("downloadTaskServerExport('docx','docx',{disabled:false})");
+    assert.deepEqual(plain(evaluate('globalThis.exportCapture')), { size: 4, name: 'sample.docx' });
+
+    evaluate(`apiFetch=async ()=>({ok:false,text:async()=>JSON.stringify({detail:'no tables'})})`);
+    await evaluate("downloadTaskServerExport('xlsx','xlsx',{disabled:false})");
+    assert.equal(evaluate('globalThis.exportAlert'), '导出失败：no tables');
 });

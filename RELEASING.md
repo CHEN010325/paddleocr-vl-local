@@ -1,10 +1,13 @@
 # Release 流程
 
+当前默认产品线包含五个模型：PaddleOCR-VL 1.6、PP-OCRv6、OvisOCR2、HPD-Parsing 和 NaviDC-OCR。Unlimited-OCR 代码仍保留用于隔离实验；它不属于 Windows/Linux 默认部署、默认 WebUI 目录或 Release 宣传内容，macOS 仅按需启用。
+
 ## 发布前
 
 1. 更新 `CHANGELOG.md`。
 2. 确认 README 中模型数量、硬件要求和命令一致。
-3. 执行：
+3. 确认 `README.md`、`README.en.md`、`QUICKSTART.md` 和 `docs/compatibility.md` 的支持矩阵一致。
+4. 执行：
 
 ```bash
 make check
@@ -14,12 +17,12 @@ docker compose --env-file env.docker --env-file "$runtime_env" --profile "*" con
 docker compose -f docker-compose.yml -f docker-compose.release.yml --env-file env.docker --env-file "$runtime_env" --profile "*" config --quiet
 ```
 
-4. 在 Draft PR 中确认 CI 和界面截图。
-5. 合并到 `main` 后创建签名或普通 tag：
+5. 在 Draft PR 中确认 CI、界面截图和至少一份真实硬件报告。
+6. 合并到 `main` 后创建签名或普通 tag：
 
 ```bash
-git tag -a v0.1.0 -m "PaddleOCR Local v0.1.0"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "PaddleOCR Local v0.2.0"
+git push origin v0.2.0
 ```
 
 Tag 会触发 Release 工作流：
@@ -27,12 +30,13 @@ Tag 会触发 Release 工作流：
 - 构建并发布 Web/控制器镜像
 - 构建并发布 Office 转换器镜像
 - 构建并发布 HPD-Parsing 适配器镜像
+- 构建并发布 NaviDC-OCR 适配器镜像
 - 根据提交自动生成 GitHub Release Notes
 
 ## 使用预构建支持镜像
 
 ```bash
-export PANDOCR_IMAGE_TAG=v0.1.0
+export PANDOCR_IMAGE_TAG=v0.2.0
 runtime_env="$(bash ./scripts/prepare-runtime-env.sh env.docker)"
 unset PANDOCR_MODEL_CONTROLLER_TOKEN
 

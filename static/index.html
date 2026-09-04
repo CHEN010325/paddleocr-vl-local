@@ -152,12 +152,29 @@
                                     <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>
                                     开始解析
                                 </button>
+                                <button class="secondary-button hidden" id="retry-btn" type="button">
+                                    重试失败批次
+                                </button>
+                                <button class="secondary-button" id="edit-btn" type="button">
+                                    纠正
+                                </button>
                                 <button class="icon-button" id="copy-btn" title="复制 Markdown">
                                     <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                 </button>
                                 <button class="icon-button" id="download-btn" title="下载结果">
                                     <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
                                 </button>
+                                <details class="export-menu" id="export-menu">
+                                    <summary class="secondary-button">导出</summary>
+                                    <div class="export-menu-popover">
+                                        <button id="docx-export-btn" type="button">可编辑 DOCX</button>
+                                        <button id="search-pdf-export-btn" type="button">可搜索 PDF</button>
+                                        <button id="html-export-btn" type="button">单文件 HTML</button>
+                                        <span class="export-menu-divider" aria-hidden="true"></span>
+                                        <button class="hidden" id="xlsx-export-btn" type="button">表格 XLSX</button>
+                                        <button class="hidden" id="csv-export-btn" type="button">表格 CSV</button>
+                                    </div>
+                                </details>
                             </div>
                         </div>
                         <div class="view-tabs">

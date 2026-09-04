@@ -17,6 +17,11 @@ services:
     image: ghcr.io/chen010325/paddleocr-local-hpd-parsing-adapter:${PANDOCR_IMAGE_TAG:-latest}
     pull_policy: always
 
+  navidc-ocr-api:
+    build: !reset null
+    image: ghcr.io/chen010325/paddleocr-local-navidc-ocr:${PANDOCR_IMAGE_TAG:-latest}
+    pull_policy: always
+
   pandocr-web:
     build: !reset null
     image: ghcr.io/chen010325/paddleocr-local-web:${PANDOCR_IMAGE_TAG:-latest}

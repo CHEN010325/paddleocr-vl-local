@@ -507,6 +507,72 @@
         }
       }
     },
+    "/api/tasks/{task_id}/export/{export_format}": {
+      "get": {
+        "summary": "Export Task",
+        "description": "Export a saved OCR task as DOCX, XLSX, or a searchable PDF.",
+        "operationId": "export_task_api_tasks__task_id__export__export_format__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "export_format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "docx",
+                "xlsx",
+                "searchable-pdf"
+              ],
+              "type": "string",
+              "title": "Export Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary task export",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "422": {
+            "description": "The saved task cannot be exported in this format"
+          },
+          "503": {
+            "description": "Export dependencies are unavailable; rebuild the Web image"
+          }
+        }
+      }
+    },
     "/api/convert/to-pdf": {
       "post": {
         "summary": "Convert To Pdf",

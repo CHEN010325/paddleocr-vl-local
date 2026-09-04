@@ -1,0 +1,42 @@
+name: Showcase or hardware report
+description: Share a successful workflow, benchmark, hardware result, or integration
+title: "[Showcase] "
+labels: [showcase]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢分享！请不要上传包含隐私、合同、身份证件或未公开研究内容的原始文档。
+  - type: input
+    id: version
+    attributes:
+      label: Project version or commit
+      placeholder: v0.2.0 or full commit SHA
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware and operating system
+      placeholder: Apple M2 16 GB / macOS 15, or RTX 4090 24 GB / Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: PaddleOCR-VL 1.6, PP-OCRv6, OvisOCR2, HPD-Parsing, or NaviDC-OCR
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: Include document type, page count, elapsed time, and what worked well.
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback or reproduction notes
+      description: Add commands, screenshots, or sanitized logs that help others reproduce it.

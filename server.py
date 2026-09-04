@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 from urllib.parse import quote, urlsplit
 from fastapi import FastAPI, HTTPException, File, UploadFile, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -618,7 +618,9 @@ async def gpu_probe_image(preferred_model_id: str | None = None) -> str | None:
 def gpu_compatibility(gpus: list[dict]) -> dict:
     selected = gpus[0] if gpus else None
     total_mib = int(selected.get("totalMiB") or 0) if selected else 0
+    free_mib = int(selected.get("freeMiB") or 0) if selected else 0
     models: dict[str, dict] = {}
+    hardware_compatible_model_ids: list[str] = []
     runnable_model_ids: list[str] = []
     for model_id, config in MODEL_RUNTIME_CONFIG.items():
         requirement = config.get("gpu_memory") or {}
@@ -626,17 +628,52 @@ def gpu_compatibility(gpus: list[dict]) -> dict:
         minimum_free = int(requirement.get("minimum_free_mib") or minimum)
         recommended = int(requirement.get("recommended_mib") or minimum)
         supported = bool(selected and total_mib >= minimum)
+        available_now = bool(supported and free_mib >= minimum_free)
         if supported:
+            hardware_compatible_model_ids.append(model_id)
+        if available_now:
             runnable_model_ids.append(model_id)
+        if not supported:
+            level = "unsupported"
+        elif not available_now:
+            level = "insufficient-free"
+        elif total_mib >= recommended:
+            level = "recommended"
+        else:
+            level = "low-memory"
         models[model_id] = {
             "supported": supported,
-            "level": "recommended" if supported and total_mib >= recommended else ("low-memory" if supported else "unsupported"),
+            "availableNow": available_now,
+            "level": level,
             "minimumMiB": minimum,
             "minimumFreeMiB": minimum_free,
             "recommendedMiB": recommended,
             "lowMemoryEnv": list(requirement.get("low_memory_env") or []),
         }
-    return {"models": models, "runnableModelIds": runnable_model_ids}
+    capability_scores = {
+        "paddleocr-vl-1.6": 100,
+        "hpd-parsing": 96,
+        "navidc-ocr": 94,
+        "unlimited-ocr": 92,
+        "ovisocr2": 90,
+        "pp-ocrv6": 70,
+    }
+    recommended_model_id = max(
+        runnable_model_ids,
+        key=lambda model_id: (
+            capability_scores.get(model_id, 0)
+            - (30 if models[model_id]["level"] == "low-memory" else 0),
+            -MODEL_CATALOG_IDS.index(model_id) if model_id in MODEL_CATALOG_IDS else 0,
+        ),
+        default=None,
+    )
+    return {
+        "models": models,
+        "hardwareCompatibleModelIds": hardware_compatible_model_ids,
+        "runnableModelIds": runnable_model_ids,
+        "recommendedModelId": recommended_model_id,
+        "recommendedModelLevel": models.get(recommended_model_id, {}).get("level") if recommended_model_id else None,
+    }
 
 
 async def probe_gpu_preflight(preferred_model_id: str | None = None, *, refresh: bool = False) -> dict:
@@ -3060,6 +3097,86 @@ async def get_task(task_id: str):
     task = hydrate_task_detail(task_id, task)
     task["detailLoaded"] = True
     return task
+
+
+ExportFormat = Literal["docx", "xlsx", "searchable-pdf"]
+TASK_EXPORT_METADATA = {
+    "docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
+    "xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+    "searchable-pdf": ("application/pdf", "searchable.pdf"),
+}
+TASK_EXPORT_RESPONSE_CONTENT = {
+    media_type: {"schema": {"type": "string", "format": "binary"}}
+    for media_type, _suffix in TASK_EXPORT_METADATA.values()
+}
+
+
+class ExportDependenciesUnavailable(RuntimeError):
+    """Raised when an upgraded source tree is running against an older image."""
+
+
+def task_exporter(export_format: ExportFormat):
+    try:
+        from exporters import build_docx, build_searchable_pdf, build_xlsx
+    except ImportError as error:
+        raise ExportDependenciesUnavailable(
+            "Export dependencies are unavailable. Rebuild the pandocr-web image before using DOCX, XLSX, or searchable PDF export."
+        ) from error
+    return {
+        "docx": build_docx,
+        "xlsx": build_xlsx,
+        "searchable-pdf": build_searchable_pdf,
+    }[export_format]
+
+
+def build_task_export(task_id: str, export_format: ExportFormat) -> tuple[bytes, str, str]:
+    task_path = task_file_path(task_id)
+    if not task_path.exists():
+        raise FileNotFoundError("Task not found")
+    task = hydrate_task_detail(task_id, read_task_file(task_path))
+    exporter = task_exporter(export_format)
+    media_type, suffix = TASK_EXPORT_METADATA[export_format]
+    if export_format == "searchable-pdf":
+        content = exporter(task, task_source_path(task_id))
+    else:
+        content = exporter(task)
+    base_name = Path(str(task.get("name") or "ocr-result")).stem
+    safe_name = re.sub(r"[^\w.-]+", "-", base_name, flags=re.UNICODE).strip(".-") or "ocr-result"
+    return content, media_type, f"{safe_name}.{suffix}"
+
+
+@app.get(
+    "/api/tasks/{task_id}/export/{export_format}",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Binary task export",
+            "content": TASK_EXPORT_RESPONSE_CONTENT,
+        },
+        404: {"description": "Task not found"},
+        422: {"description": "The saved task cannot be exported in this format"},
+        503: {"description": "Export dependencies are unavailable; rebuild the Web image"},
+    },
+)
+async def export_task(task_id: str, export_format: ExportFormat):
+    """Export a saved OCR task as DOCX, XLSX, or a searchable PDF."""
+    safe_task_id(task_id)
+    try:
+        content, media_type, filename = await run_in_threadpool(build_task_export, task_id, export_format)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ExportDependenciesUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Failed to export task %s as %s", task_id, export_format)
+        raise HTTPException(status_code=500, detail="Failed to generate export") from error
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @app.put("/api/tasks/{task_id}")

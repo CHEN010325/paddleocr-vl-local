@@ -2,7 +2,7 @@
 
 RUNTIME_ENV ?= tmp/pandocr-runtime.env
 COMPOSE_CORE = docker compose --env-file env.txt --env-file $(RUNTIME_ENV) --profile paddleocr-vl --profile pp-ocrv6
-COMPOSE_ALL = $(COMPOSE_CORE) --profile unlimited-ocr --profile ovisocr2 --profile hpd-parsing
+COMPOSE_ALL = $(COMPOSE_CORE) --profile unlimited-ocr --profile ovisocr2 --profile hpd-parsing --profile navidc-ocr
 CORE_SERVICES = pandocr-controller pandocr-office-converter pandocr-web paddleocr-vlm-server paddleocr-vl-api paddleocr-ocr-api
 
 # 默认目标

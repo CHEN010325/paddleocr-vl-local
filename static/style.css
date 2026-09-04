@@ -231,6 +231,25 @@ svg {
     background: #fef2f2;
 }
 
+.gpu-recommendation-button {
+    margin-left: 10px;
+    padding: 3px 8px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    color: inherit;
+    background: rgba(255, 255, 255, .72);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.gpu-recommendation-button:hover,
+.gpu-recommendation-button:focus-visible {
+    background: #fff;
+    outline: 2px solid rgba(37, 99, 235, .18);
+    outline-offset: 1px;
+}
+
 .dot {
     width: 8px;
     height: 8px;
@@ -737,6 +756,81 @@ svg {
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+.export-menu {
+    position: relative;
+}
+
+.export-menu > summary {
+    display: inline-flex;
+    align-items: center;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+}
+
+.export-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.export-menu > summary::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    margin-left: 7px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+}
+
+.export-menu[open] > summary::after {
+    transform: translateY(2px) rotate(225deg);
+}
+
+.export-menu-popover {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 174px;
+    padding: 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 14px 36px rgba(15, 23, 42, .16);
+}
+
+.export-menu-popover button {
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 7px;
+    color: var(--text);
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.export-menu-popover button:hover:not(:disabled),
+.export-menu-popover button:focus-visible {
+    color: var(--brand);
+    background: var(--brand-soft);
+    outline: none;
+}
+
+.export-menu-popover button:disabled {
+    color: var(--muted);
+    cursor: not-allowed;
+    opacity: .62;
+}
+
+.export-menu-divider {
+    display: block;
+    height: 1px;
+    margin: 5px 4px;
+    background: var(--line);
 }
 
 .markdown-editor-shell {

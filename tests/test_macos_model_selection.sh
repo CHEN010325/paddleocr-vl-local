@@ -18,6 +18,7 @@ selection_env=(
   env
   -u PANDOCR_ENABLE_PADDLEOCR_VL
   -u PANDOCR_ENABLE_PPOCRV6
+  -u PANDOCR_ENABLE_UNLIMITED_OCR
   -u PANDOCR_ENABLE_HPD_PARSING
   -u PANDOCR_ENABLE_OVISOCR2
   -u PANDOCR_ACTIVE_MODEL_ON_START
@@ -37,6 +38,7 @@ assert_start_selection() {
 assert_start_selection paddleocr-vl-1.6
 assert_start_selection paddleocr-vl-1.6 PANDOCR_ENABLE_PADDLEOCR_VL=1
 assert_start_selection pp-ocrv6 PANDOCR_ENABLE_PPOCRV6=1
+assert_start_selection unlimited-ocr PANDOCR_ENABLE_UNLIMITED_OCR=1
 assert_start_selection hpd-parsing PANDOCR_ENABLE_HPD_PARSING=1
 assert_start_selection ovisocr2 PANDOCR_ENABLE_OVISOCR2=1
 assert_start_selection ovisocr2 PANDOCR_ACTIVE_MODEL_ON_START=ovisocr2
@@ -57,7 +59,7 @@ if "${selection_env[@]}" PANDOCR_ENABLE_PADDLEOCR_VL=1 PANDOCR_ENABLE_PPOCRV6=1 
   exit 1
 fi
 
-if "${selection_env[@]}" PANDOCR_ENABLE_PADDLEOCR_VL=0 PANDOCR_ENABLE_PPOCRV6=0 PANDOCR_ENABLE_HPD_PARSING=0 PANDOCR_ENABLE_OVISOCR2=0 bash scripts/start-macos.sh >/dev/null 2>&1; then
+if "${selection_env[@]}" PANDOCR_ENABLE_PADDLEOCR_VL=0 PANDOCR_ENABLE_PPOCRV6=0 PANDOCR_ENABLE_UNLIMITED_OCR=0 PANDOCR_ENABLE_HPD_PARSING=0 PANDOCR_ENABLE_OVISOCR2=0 bash scripts/start-macos.sh >/dev/null 2>&1; then
   echo "start-macos unexpectedly accepted zero enabled logical models."
   exit 1
 fi
@@ -73,6 +75,7 @@ mixed_catalog_output="$(${selection_env[@]} PANDOCR_ENABLE_OVISOCR2=1 PANDOCR_MO
 if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   assert_selection 1 paddleocr-vl-1.6
   assert_selection ppocrv6 pp-ocrv6
+  assert_selection unlimited unlimited-ocr
   assert_selection hpd hpd-parsing
   assert_selection ovis ovisocr2
 

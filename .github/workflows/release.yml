@@ -23,6 +23,8 @@ jobs:
             dockerfile: Dockerfile.office-converter
           - name: hpd-parsing-adapter
             dockerfile: Dockerfile.hpd-parsing-adapter
+          - name: navidc-ocr
+            dockerfile: Dockerfile.navidc-ocr
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

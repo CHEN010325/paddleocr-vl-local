@@ -1,4 +1,4 @@
-# 我把 5 个开源 OCR 模型装进一个本地工作台：PDF 转 Markdown，不用再来回折腾了
+# 我把 5 个开源 OCR 模型装进一个本地工作台：PDF 转可编辑文档，不用再来回折腾了
 
 > 备选标题：
 >
@@ -18,18 +18,19 @@
 
 所以我做了一个开源项目：**PaddleOCR Local**。
 
-它把 PaddleOCR-VL 1.6、PP-OCRv6、Unlimited-OCR、OvisOCR2 和 HPD-Parsing 放进同一个本地文档解析工作台。
+它把 PaddleOCR-VL 1.6、PP-OCRv6、OvisOCR2、HPD-Parsing 和 NaviDC-OCR 放进同一个本地文档解析工作台。
 
-上传 PDF、图片、Word 或 PowerPoint，选择模型，就能在浏览器中查看原文件与解析结果，并导出 Markdown 和 JSON。
+上传 PDF、图片、Word 或 PowerPoint，选择模型，就能在浏览器中查看原文件与解析结果，并导出 DOCX、可搜索 PDF、HTML、Markdown/JSON 和表格文件。
 
 ## 先说结论：它解决的不是“有没有 OCR”，而是“怎么真正用起来”
 
-PaddleOCR Local 目前最值得关注的有五点：
+PaddleOCR Local 目前最值得关注的有六点：
 
 - 文档和结果保存在本机，不需要上传第三方云服务。
 - 五款模型共用一套界面和任务历史。
 - 单 GPU 只加载当前模型，切换时自动释放其他模型显存。
-- 启动前检查显存，并告诉你当前硬件更适合哪些模型。
+- 启动前检查显存，推荐当前硬件更适合的模型并支持一键切换。
+- 失败时只重试失败批次，完成后可导出继续编辑或检索的文档。
 - Windows、Linux NVIDIA 和 Apple Silicon 都有对应部署路径。
 
 这点很关键。
@@ -38,7 +39,7 @@ PaddleOCR Local 目前最值得关注的有五点：
 
 ## 单模型流程更直接
 
-项目的 WebUI 保持原来的单模型工作流：选择当前模型、上传文件、查看解析结果并下载 Markdown 或 JSON。
+项目的 WebUI 保持直接的单模型工作流：选择当前模型、上传文件、查看解析结果；失败批次可以单独重试，完成后可下载 DOCX、可搜索 PDF、离线 HTML、Markdown/JSON 或 CSV/XLSX。
 
 同一张 GPU 同时只运行一个逻辑模型；切换模型时会先停止旧模型、确认显存释放，再启动新模型。这样更适合日常处理隐私文档，也避免用户为了完成一次解析而管理复杂的对比任务。
 

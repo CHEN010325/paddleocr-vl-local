@@ -73,7 +73,7 @@ NVIDIA 用户继续使用下面的 Docker 流程。
 .\windows-one-click.bat
 ```
 
-脚本会让用户从 `PaddleOCR-VL 1.6`、`PP-OCRv6`、`OvisOCR2`、`HPD-Parsing` 中选择首次部署模型，只拉取或构建对应服务、WebUI 及两个隔离支持服务。Unlimited-OCR 已从默认环境停用，不会出现在 WebUI 模型目录中。随后由 `pandocr-controller` 只启动选择的模型，并通过 `/api/model-runtime` 等待它进入 ready。用户切换模型时，控制器先完整停止旧模型并确认显存释放，再启动新模型，保证任意时刻显存只驻留当前选择的一个逻辑模型。
+默认产品线和 WebUI 模型目录包含 `PaddleOCR-VL 1.6`、`PP-OCRv6`、`OvisOCR2`、`HPD-Parsing` 和 `NaviDC-OCR` 五个模型。脚本只拉取或构建选中模型的对应服务、WebUI 及两个隔离支持服务。Unlimited-OCR 默认不启动；Windows/Linux Docker 中保持为隐藏的实验 profile，macOS 可用 `./macos-one-click.command --model unlimited-ocr` 按需选择。随后由 `pandocr-controller` 只启动选择的模型，并通过 `/api/model-runtime` 等待它进入 ready。用户切换模型时，控制器先完整停止旧模型并确认显存释放，再启动新模型，保证任意时刻显存只驻留当前选择的一个逻辑模型。
 
 只做预检、不启动服务：
 
@@ -87,15 +87,16 @@ NVIDIA 用户继续使用下面的 Docker 流程。
 .\windows-one-click.bat -GpuId 1
 ```
 
-直接指定 HPD-Parsing，或部署全部模型但首次启动 HPD-Parsing：
+直接指定 HPD-Parsing 或 NaviDC-OCR：
 
 ```powershell
 .\windows-one-click.bat -Model hpd-parsing
-.\windows-one-click.bat -Model hpd-parsing
+.\windows-one-click.bat -Model navidc-ocr
 ```
 
 HPD-Parsing 官方运行时要求 NVIDIA GPU、Linux x86-64 容器和支持 CUDA 12.8+ 的驱动；Apple Silicon 一键脚本暂不提供该模型。
 默认部署会自动把 vLLM 显存预算控制在约 6.5 GiB，建议至少使用 8 GiB 显卡；如需手动调整，可设置 `HPD_PARSING_GPU_MEMORY_TARGET_MIB`，或用 `HPD_PARSING_GPU_MEMORY_UTILIZATION` 覆盖自动比例。
+NaviDC-OCR 默认使用官方 NaviOCRClient 的 `vllm-async-engine` 后端；如需切换为兼容的 Transformers 路径，可在 `env.txt` / `env.docker` 中设置 `NAVIDC_OCR_BACKEND=transformers`（两种路径都要求 NVIDIA GPU）。
 
 ## 手动 Docker 流程
 
@@ -122,7 +123,7 @@ WebUI 会在模型启动前通过一个短生命周期的 `nvidia-smi` 容器读
 | PP-OCRv6 | 4096 MiB | `PANDOCR_MAX_CONCURRENT_OCR=1` |
 | OvisOCR2 | 7680 MiB | `OVISOCR2_KV_CACHE_MEMORY_MB=256`、`OVISOCR2_MAX_TOKENS=4096` |
 | HPD-Parsing | 7680 MiB | `HPD_PARSING_GPU_MEMORY_TARGET_MIB=6144`、`HPD_PARSING_MAX_MODEL_LEN=8192`、`HPD_PARSING_MAX_TOKENS=4096` |
-| NaviDC-OCR | 7680 MiB | `NAVIDC_OCR_MAX_TOKENS=2048`、`NAVIDC_OCR_MAX_RENDER_PIXELS=40000000` |
+| NaviDC-OCR | 7680 MiB | 默认 `NAVIDC_OCR_BACKEND=vllm-async-engine`；可设 `NAVIDC_OCR_MAX_TOKENS=2048`、`NAVIDC_OCR_MAX_RENDER_PIXELS=40000000` |
 
 这些是启动兼容性下限，不是性能保证；长页面和高分辨率输入仍建议 12–16 GB。页面显示的“当前空闲”低于预算时，先关闭其他 GPU 进程。
 
@@ -168,9 +169,10 @@ curl http://localhost:8081/health
 - `ovisocr2-api`
 - `hpd-parsing-server`
 - `hpd-parsing-api`
+- `navidc-ocr-api`
 - `pandocr-web`
 
-`/api/models` 应返回 `paddleocr-vl-1.6`、`pp-ocrv6`、`ovisocr2` 和 `hpd-parsing`；未部署模型会显示为待部署。`/api/model-runtime` 应返回当前活跃模型和每个模型的真实运行状态。
+`/api/models` 应返回 `paddleocr-vl-1.6`、`pp-ocrv6`、`ovisocr2`、`hpd-parsing` 和 `navidc-ocr`；未部署模型会显示为待部署。`/api/model-runtime` 应返回当前活跃模型和每个模型的真实运行状态。
 
 模型健康检查端口：
 
@@ -178,6 +180,7 @@ curl http://localhost:8081/health
 - PP-OCRv6: http://localhost:8082/health
 - OvisOCR2: http://localhost:8084/health
 - HPD-Parsing: http://localhost:8085/health
+- NaviDC-OCR: http://localhost:8086/health
 
 ### 5. 使用
 
@@ -186,7 +189,8 @@ curl http://localhost:8081/health
 - 图片会直接作为图片请求提交。
 - PDF 会按页提交，任务完成后会保留每页原始 JSON，方便和官方在线结果核对。
 - PPT/PPTX/DOC/DOCX 会先由 `pandocr-office-converter` 调 LibreOffice 转 PDF，再进入 PDF 流程。
-- 结果区会渲染 Markdown、表格和 KaTeX 公式，并修正 OCR 结果里字面量 `\n` 导致的不换行问题。
+- 结果区会渲染 Markdown、表格和 KaTeX 公式，并保留 Windows 路径和 LaTeX 中有意义的反斜杠。
+- 失败时可只重试失败批次；完成后可导出 DOCX、可搜索 PDF、离线 HTML、Markdown / JSON 和 CSV / XLSX。
 - 历史任务会保存到本机 `data/tasks/`，侧边栏删除按钮会同时删除对应本地记录。
 
 ## 常见问题

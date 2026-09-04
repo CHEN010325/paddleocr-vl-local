@@ -6,12 +6,14 @@ WORKDIR /app
 # controller. Office conversion lives in its own image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server.py .
+COPY exporters.py .
 COPY controller.py .
 COPY unlimited_ocr_adapter.py .
 COPY ovisocr2_adapter.py .
@@ -29,7 +31,8 @@ COPY static/ ./static/
 ARG PANDOCR_APP_VERSION=0.2.0
 ARG PANDOCR_GIT_COMMIT=
 ENV PANDOCR_APP_VERSION=${PANDOCR_APP_VERSION} \
-    PANDOCR_GIT_COMMIT=${PANDOCR_GIT_COMMIT}
+    PANDOCR_GIT_COMMIT=${PANDOCR_GIT_COMMIT} \
+    PANDOCR_DOCX_FORMULA_MODE=native
 
 EXPOSE 8000
 

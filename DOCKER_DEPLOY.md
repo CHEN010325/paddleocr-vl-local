@@ -2,7 +2,7 @@
 
 ## 服务组成
 
-`docker-compose.yml` 包含常驻 WebUI、隔离的内部控制/转换服务，以及五个相互独立的模型 profile：
+`docker-compose.yml` 包含常驻 WebUI、隔离的内部控制/转换服务、五个默认产品模型的独立 profile，以及仅供隔离实验的非默认 Unlimited-OCR profile：
 
 | 服务 | Profile | 作用 | 对外端口 |
 | --- | --- | --- | --- |
@@ -14,6 +14,7 @@
 | `ovisocr2-api` | `ovisocr2` | OvisOCR2 独立 vLLM 推理 | `8084:8080` |
 | `hpd-parsing-server` | `hpd-parsing` | HPD-Parsing 官方定制 vLLM 推理 | 无 |
 | `hpd-parsing-api` | `hpd-parsing` | HPD-Parsing 图片/PDF 与 Markdown 适配服务 | `8085:8080` |
+| `navidc-ocr-api` | `navidc-ocr` | NaviDC-OCR vLLM 异步文档解析服务（可选 Transformers 后端） | `8086:8080` |
 | `pandocr-controller` | 常驻 | 内部白名单模型控制，独占 Docker socket | 无 |
 | `pandocr-office-converter` | 常驻 | 非 root、只读运行的 LibreOffice 转换器 | 无 |
 | `pandocr-web` | 常驻 | WebUI、FastAPI 代理 | `8000:8000` |
@@ -87,11 +88,11 @@ Windows + NVIDIA 用户推荐直接运行一键部署脚本：
 .\windows-one-click.bat
 ```
 
-脚本会自动选择环境文件，并让用户从五个模型中选择首次部署模型；只创建选中的模型容器和 WebUI，然后等待所选模型健康。选择多个模型时可通过 `-ActiveModel` 指定首次启动模型：
+脚本会自动选择环境文件，只创建选中的模型容器和 WebUI，然后等待所选模型健康。默认产品线包含 PaddleOCR-VL 1.6、PP-OCRv6、OvisOCR2、HPD-Parsing 和 NaviDC-OCR；可使用 `-Model` 直接指定：
 
 ```powershell
 .\windows-one-click.bat -Model ovisocr2
-.\windows-one-click.bat -Models all-five -ActiveModel ovisocr2
+.\windows-one-click.bat -Model navidc-ocr
 ```
 
 HPD-Parsing 可直接一键部署：
@@ -106,7 +107,7 @@ HPD-Parsing 默认按约 6.5 GiB 的绝对预算自动计算 vLLM 显存比例�
 
 ## 启动前 GPU 显存预检
 
-`pandocr-controller` 会在切换/启动模型前运行短生命周期的 GPU 探测容器。`/api/model-runtime` 的 `gpuPreflight` 字段和 WebUI 顶部提示会列出 GPU 型号、总/空闲显存、可运行模型以及低显存环境变量。PaddleOCR-VL 按官方当前最低成功运行配置 RTX 3060 12 GB 设置 `11264 MiB` 保护下限；RTX 4070 Laptop 8 GB 不会再尝试启动该模型，页面会直接推荐 PP-OCRv6 等兼容模型。依据见 [PaddleOCR-VL 推理部署高频问题](https://github.com/PaddlePaddle/PaddleOCR/discussions/16822)。
+`pandocr-controller` 会在切换/启动模型前运行短生命周期的 GPU 探测容器。`/api/model-runtime` 的 `gpuPreflight` 字段和 WebUI 顶部提示会列出 GPU 型号、硬件兼容模型、按当前空闲显存可立即运行的模型，以及低显存环境变量。PaddleOCR-VL 按官方当前最低成功运行配置 RTX 3060 12 GB 设置 `11264 MiB` 保护下限；RTX 4070 Laptop 8 GB 不会再尝试启动该模型，页面会直接推荐 PP-OCRv6 等兼容模型。依据见 [PaddleOCR-VL 推理部署高频问题](https://github.com/PaddlePaddle/PaddleOCR/discussions/16822)。
 
 PaddleOCR-VL 推荐保留以下默认值：
 
@@ -143,15 +144,17 @@ curl http://localhost:8081/health
 
 默认情况下只有 `PaddleOCR-VL 1.6` 会启动，`PP-OCRv6` 的健康检查不通是正常的。切到 `PP-OCRv6` 时，控制器先完整停止 VL 的 API/VLM 容器并释放显存，之后才启动 PP-OCRv6；最终 `8082/health` 可用，而 `8081/health` 不可用。解析正在运行时模型切换会返回 `409`，避免长任务中途被停容器打断。
 
+其他默认模型启动后的健康检查端口分别是 OvisOCR2 `8084`、HPD-Parsing `8085` 和 NaviDC-OCR `8086`。
+
 如果要通过反向代理、局域网或公网暴露 WebUI，请设置 `PANDOCR_API_TOKEN`。`PANDOCR_ENFORCE_ORIGIN_CHECK=1` 会拒绝未加入来源白名单的跨站 API 写请求，但它不能替代 token；前端会在 API 返回 401 时提示输入 token。`PANDOCR_ENABLE_API_DOCS=1` 时才启用 `/docs` 和 `/redoc`。
 
 `/api/models` 应返回：
 
 ```json
-{"default":"paddleocr-vl-1.6","data":[{"id":"paddleocr-vl-1.6","name":"PaddleOCR-VL-1.6-0.9B"},{"id":"pp-ocrv6","name":"PP-OCRv6_medium"}],"originProtection":true,"maxConcurrentOcr":1}
+{"default":"paddleocr-vl-1.6","data":[{"id":"paddleocr-vl-1.6","name":"PaddleOCR-VL-1.6-0.9B"},{"id":"pp-ocrv6","name":"PP-OCRv6_medium"},{"id":"ovisocr2","name":"ATH-MaaS/OvisOCR2"},{"id":"hpd-parsing","name":"PaddlePaddle/HPD-Parsing"},{"id":"navidc-ocr","name":"StarDoc-AI/NaviDC-OCR"}],"originProtection":true,"maxConcurrentOcr":1}
 ```
 
-## 重启 Web 服务
+## 升级或重启 Web 服务
 
 前端或 FastAPI 逻辑变更后，重建并重启 `pandocr-web`；控制或 Office 转换逻辑变更时也重建对应的隔离服务：
 
@@ -162,7 +165,10 @@ docker compose --env-file $baseEnv --env-file $runtimeEnv build pandocr-web pand
 docker compose --env-file $baseEnv --env-file $runtimeEnv up -d --no-deps --force-recreate pandocr-controller pandocr-office-converter pandocr-web
 ```
 
-代码以只读方式挂载；生产部署仍建议重建镜像，避免运行内容与镜像版本不一致。
+导出链路新增了 `python-docx`、`openpyxl`、`reportlab` 和 `pypdf` 等镜像依赖。从旧版升级时，仅执行 `restart` 或对旧镜像执行 `--force-recreate` 不会安装这些依赖。
+必须先执行 `./build.sh`、`build.bat` 或上面的 `docker compose ... build pandocr-web`，再重建容器。
+
+开发版 Compose 会以只读方式挂载最新的 `server.py` 和 `exporters.py`。如果容器仍使用缺少上述依赖的旧 `pandocr-web` 镜像，服务仍可启动，非导出功能也可继续使用；但 `/api/tasks/{task_id}/export/{format}` 会返回 `503` 并提示重建镜像。这只是升级兼容保护，不代表导出依赖已安装完成。生产部署应始终重建或拉取与代码同版本的镜像，避免运行内容与镜像版本不一致。
 
 ## 本地任务数据
 
@@ -180,6 +186,7 @@ docker compose --env-file $baseEnv --env-file $runtimeEnv logs -f pandocr-contro
 docker compose --env-file $baseEnv --env-file $runtimeEnv --profile paddleocr-vl logs -f paddleocr-vl-api paddleocr-vlm-server
 docker compose --env-file $baseEnv --env-file $runtimeEnv --profile pp-ocrv6 logs -f paddleocr-ocr-api
 docker compose --env-file $baseEnv --env-file $runtimeEnv --profile hpd-parsing logs --tail=200 hpd-parsing-server hpd-parsing-api
+docker compose --env-file $baseEnv --env-file $runtimeEnv --profile navidc-ocr logs --tail=200 navidc-ocr-api
 ```
 
 WebUI 模型启动失败时会从 Docker API 读取对应容器最后 120 行日志并显示在显存提示栏，同时给出等价的 `docker logs --tail 200 <container>` 命令。PaddleOCR-VL 优先检查 `paddleocr-vlm-server`；HPD-Parsing 优先检查 `hpd-parsing-server`，再检查各自的 API/adapter 容器。
@@ -210,6 +217,7 @@ paddleocr-ocr-api:
 - `./model_cache_ocr:/home/paddleocr/.paddleocr`：PaddleOCR-VL 相关缓存
 - `./model_cache_ppocrv6:/home/paddleocr/.paddlex`：PP-OCRv6 / PaddleX 3.7 缓存
 - `./model_cache_ppocrv6_ocr:/home/paddleocr/.paddleocr`：PP-OCRv6 相关缓存
+- `./model_cache_navidc_ocr:/root/.cache/huggingface`：NaviDC-OCR 模型缓存
 
 这些缓存目录已加入 `.dockerignore`，不会被打进 `pandocr-web` 镜像构建上下文。
 

@@ -2,7 +2,7 @@
 
 ## 标题
 
-一个界面跑 5 个 OCR 模型：PDF、Word、PPT 本地转 Markdown
+一个界面跑 5 个 OCR 模型：PDF、Word、PPT 本地转可编辑文档
 
 ## 封面文字
 
@@ -31,11 +31,11 @@
 
 ### 0:55～1:35 项目定位
 
-画面：WebUI 模型选择器依次展开五个模型。
+画面：WebUI 模型选择器依次展开五个默认模型。
 
 旁白：
 
-> PaddleOCR Local 把 PaddleOCR-VL、PP-OCRv6、Unlimited-OCR、OvisOCR2 和 HPD-Parsing 放进同一套本地工作台。支持 PDF、图片、Word 和 PowerPoint。
+> PaddleOCR Local 把 PaddleOCR-VL、PP-OCRv6、OvisOCR2、HPD-Parsing 和 NaviDC-OCR 放进同一套本地工作台。支持 PDF、图片、Word 和 PowerPoint。
 
 ### 1:35～2:15 一键部署
 
@@ -51,11 +51,11 @@
 
 ### 2:15～3:10 单模型结果
 
-画面：选择当前模型，上传文件，展示源文件、Markdown、JSON 和下载结果。
+画面：选择当前模型，上传文件，展示源文件、Markdown、失败批次重试和导出菜单。
 
 旁白：
 
-> 每次只运行用户当前选择的一个逻辑模型。解析完成后可以查看 Markdown 或 JSON，并将结果和图片资源下载到本地。
+> 每次只运行用户当前选择的一个逻辑模型。失败时只重试失败批次；完成后可以继续编辑 Markdown，也可以导出 DOCX、可搜索 PDF、离线 HTML 和表格文件。
 
 ### 3:10～3:50 CLI 与目录监听
 

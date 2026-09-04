@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 使用体验与导出
+
+- 新增失败批次单独重试，只重新处理错误批次，并保留已完成批次的 Markdown、图片和 JSON。
+- 新增离线单文件 HTML 导出，自动内嵌提取图片，不依赖网络即可打开。
+- 新增 Markdown 表格 CSV 导出；多个表格自动打包为 ZIP，并阻止电子表格公式注入。
+- 新增可编辑 DOCX、可搜索 PDF 和 XLSX 导出；DOCX 保留标题、列表与表格结构，PDF 在原页面上增加不可见检索文本层，XLSX 自动按表格拆分工作表并防止公式注入。
+- 新增基于 GPU 显存与模型能力的推荐模型提示，可从预检栏一键切换。
+- 重写中英文 README 首屏，新增 60 秒体验指南、Showcase 模板和清晰的版本路线。
+
 ### 多模型工作台
 
 - 新增同一源文件的多模型顺序解析、独立任务、耗时记录、并排查看和 Markdown 对比报告下载。
@@ -16,7 +25,7 @@
 
 ### 单模型显存互斥与可靠性
 
-- 将五个逻辑模型全部放入独立 Compose profile；所有部署入口只预创建模型容器，由 controller 启动用户当前选择的唯一模型。
+- 将五个默认逻辑模型（PaddleOCR-VL 1.6、PP-OCRv6、OvisOCR2、HPD-Parsing 和 NaviDC-OCR）放入独立 Compose profile；所有部署入口只预创建模型容器，由 controller 启动用户当前选择的唯一模型。Unlimited-OCR 保留为非默认实验适配器。
 - 新增 controller 原子 OCR lease，消除 Web OCR 与远程模型切换之间的并发竞态；有在途 OCR 时切换、部署和后端变更均会失败闭锁。
 - 模型切换严格执行“停止并复检全部非目标模型 → GPU 预检 → 启动目标 → 唯一 running/ready 复检”，失败时清理半启动目标。
 - 运行状态新增 `runningModelIds`、`readyModelIds` 与 `exclusivityViolation`，不再隐藏异常的多模型残留。

@@ -244,9 +244,14 @@ class ServerDockerRuntimeTests(unittest.IsolatedAsyncioTestCase):
         result = self.server.gpu_compatibility(
             [{"name": "RTX 4070 Laptop GPU", "totalMiB": 8188, "freeMiB": 7800}]
         )
+        self.assertIn("pp-ocrv6", result["hardwareCompatibleModelIds"])
+        self.assertNotIn("paddleocr-vl-1.6", result["hardwareCompatibleModelIds"])
         self.assertIn("pp-ocrv6", result["runnableModelIds"])
         self.assertNotIn("paddleocr-vl-1.6", result["runnableModelIds"])
+        self.assertEqual(result["recommendedModelId"], "pp-ocrv6")
+        self.assertEqual(result["recommendedModelLevel"], "recommended")
         self.assertEqual(result["models"]["paddleocr-vl-1.6"]["level"], "unsupported")
+        self.assertTrue(result["models"]["pp-ocrv6"]["availableNow"])
         self.assertIn(
             "PANDOCR_VLLM_MIN_REQUIRED_MIB=6656",
             result["models"]["paddleocr-vl-1.6"]["lowMemoryEnv"],
@@ -254,6 +259,57 @@ class ServerDockerRuntimeTests(unittest.IsolatedAsyncioTestCase):
         launcher = (Path(__file__).resolve().parents[1] / "start-vlm.sh").read_text(encoding="utf-8")
         self.assertIn('PANDOCR_VLLM_MIN_TOTAL_MIB:-11264', launcher)
         self.assertIn('PANDOCR_VLLM_MIN_REQUIRED_MIB:-6656', launcher)
+
+    async def test_gpu_compatibility_separates_total_capacity_from_current_free_memory(self):
+        config = {
+            "paddleocr-vl-1.6": {
+                "gpu_memory": {
+                    "minimum_mib": 11264,
+                    "minimum_free_mib": 6656,
+                    "recommended_mib": 15360,
+                }
+            },
+            "pp-ocrv6": {
+                "gpu_memory": {
+                    "minimum_mib": 4096,
+                    "minimum_free_mib": 4096,
+                    "recommended_mib": 6144,
+                }
+            },
+            "navidc-ocr": {
+                "gpu_memory": {
+                    "minimum_mib": 7680,
+                    "minimum_free_mib": 6656,
+                    "recommended_mib": 11264,
+                }
+            },
+        }
+        with (
+            patch.dict(self.server.MODEL_RUNTIME_CONFIG, config, clear=True),
+            patch.object(self.server, "MODEL_CATALOG_IDS", list(config)),
+        ):
+            busy = self.server.gpu_compatibility(
+                [{"name": "Busy RTX", "totalMiB": 24576, "freeMiB": 1024}]
+            )
+            ready = self.server.gpu_compatibility(
+                [{"name": "Ready RTX", "totalMiB": 12288, "freeMiB": 7000}]
+            )
+
+        self.assertEqual(busy["hardwareCompatibleModelIds"], list(config))
+        self.assertEqual(busy["runnableModelIds"], [])
+        self.assertIsNone(busy["recommendedModelId"])
+        for model_id in config:
+            with self.subTest(state="busy", model_id=model_id):
+                self.assertTrue(busy["models"][model_id]["supported"])
+                self.assertFalse(busy["models"][model_id]["availableNow"])
+                self.assertEqual(busy["models"][model_id]["level"], "insufficient-free")
+
+        self.assertEqual(ready["hardwareCompatibleModelIds"], list(config))
+        self.assertEqual(ready["runnableModelIds"], list(config))
+        self.assertEqual(ready["recommendedModelId"], "navidc-ocr")
+        self.assertEqual(ready["recommendedModelLevel"], "recommended")
+        self.assertTrue(ready["models"]["navidc-ocr"]["supported"])
+        self.assertTrue(ready["models"]["navidc-ocr"]["availableNow"])
 
     async def test_gpu_probe_parses_nvidia_smi_and_removes_probe_container(self):
         api = AsyncMock(

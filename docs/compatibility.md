@@ -10,7 +10,7 @@
 | PP-OCRv6 | NVIDIA 4,096 MiB | 4 GB+ | CPU Lite 一键路径仍在路线图中 |
 | OvisOCR2 | NVIDIA 7,680 MiB | 8～16 GB+ | Apple Silicon 默认 MLX |
 | HPD-Parsing | NVIDIA 7,680 MiB | 12 GB+ | 当前不支持 Apple Silicon 一键部署 |
-| NaviDC-OCR | NVIDIA 7,680 MiB | 12 GB+ | CUDA / Transformers；模型权重约 1.2B BF16 |
+| NaviDC-OCR | NVIDIA 7,680 MiB | 12 GB+ | CUDA / vLLM 异步（默认；可选 Transformers）；模型权重约 1.2B BF16 |
 
 长页面、高 DPI 图片、大批页数和较高 `max_tokens` 会增加显存。8 GB 设备优先使用每批 1 页和低显存参数。
 
@@ -20,8 +20,8 @@
 | --- | --- | --- | --- | --- |
 | RTX 4070 Laptop 8 GB / Ubuntu 24 | PaddleOCR-VL 1.6 | 不满足当前预检 | 推荐 PP-OCRv6 或 8 GB 适配模型 | Issue #7 |
 | Apple M1/M2/M3/M4 | OvisOCR2 | 提供 MLX 路径 | 仍需更多芯片/内存/速度报告 | 项目安装脚本 |
-| RTX 30/40 | 四个默认模型 | 提供 Docker 路径 | 按模型显存要求选择 | `env.docker` |
-| RTX 50 / Blackwell | 四个默认模型 | 提供 SM120 路径 | 使用 `env.txt` | `env.txt` |
+| RTX 30/40 | 五个默认模型 | 提供 Docker 路径 | 按模型显存要求选择 | `env.docker` |
+| RTX 50 / Blackwell | 五个默认模型 | 提供 SM120 路径 | 使用 `env.txt` | `env.txt` |
 
 没有社区报告的组合不会被标记为“已实测”。
 

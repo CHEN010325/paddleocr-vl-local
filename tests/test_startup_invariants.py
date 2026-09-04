@@ -109,6 +109,24 @@ def test_windows_one_click_uses_per_model_gpu_requirements():
     assert "$gpu.FreeMiB -lt 6656" not in script
 
 
+def test_windows_runtime_env_disables_optional_models_that_are_not_deployed():
+    script = read("scripts/windows-one-click.ps1")
+    for model_id, key in (
+        ("unlimited-ocr", "PANDOCR_ENABLE_UNLIMITED_OCR"),
+        ("ovisocr2", "PANDOCR_ENABLE_OVISOCR2"),
+        ("hpd-parsing", "PANDOCR_ENABLE_HPD_PARSING"),
+        ("navidc-ocr", "PANDOCR_ENABLE_NAVIDC_OCR"),
+    ):
+        source = "DeployModelIds" if model_id == "unlimited-ocr" else "RuntimeModelCatalogIds"
+        expected = f'($script:{source} -contains "{model_id}")'
+        assert expected in script
+        assert f'-Key "{key}" -Value $(if ' in script
+    assert '-Key "PANDOCR_ENABLE_UNLIMITED_OCR" -Value "1"' not in script
+    assert '-Key "PANDOCR_ENABLE_OVISOCR2" -Value "1"' not in script
+    assert '-Key "PANDOCR_ENABLE_HPD_PARSING" -Value "1"' not in script
+    assert '-Key "PANDOCR_ENABLE_NAVIDC_OCR" -Value "1"' not in script
+
+
 def test_windows_local_build_embeds_non_secret_version_metadata():
     compose = read("docker-compose.yml")
     web = compose_service_block(compose, "pandocr-web")
@@ -154,6 +172,13 @@ def test_controller_healthcheck_expands_its_internal_token():
     controller = compose_service_block(compose, "pandocr-controller")
     assert "-H X-Pandocr-Controller-Token:$${PANDOCR_MODEL_CONTROLLER_TOKEN}" in controller
     assert "'X-Pandocr-Controller-Token: $${PANDOCR_MODEL_CONTROLLER_TOKEN}'" not in controller
+
+
+def test_makefile_all_profiles_include_navidc_cleanup_scope():
+    makefile = read("Makefile")
+    compose_all = next(line for line in makefile.splitlines() if line.startswith("COMPOSE_ALL ="))
+    for profile in ("unlimited-ocr", "ovisocr2", "hpd-parsing", "navidc-ocr"):
+        assert f"--profile {profile}" in compose_all
 
 
 def test_only_controller_persists_ocr_leases_in_shared_data():
@@ -208,8 +233,22 @@ def test_unlimited_ocr_sglang_uses_digest_pinned_cuda_12_9_for_sm120():
     assert "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04" not in compose
 
 
+def test_navidc_vllm_engine_is_pinned_to_the_configured_model_revision():
+    adapter = read("navidc_ocr_adapter.py")
+    engine_block = re.search(
+        r"AsyncEngineArgs\(\s*model=MODEL_NAME,\s*(?P<body>.*?)\s*\)\)",
+        adapter,
+        re.DOTALL,
+    )
+    assert engine_block, "NaviDC vLLM engine arguments are missing"
+    assert "revision=MODEL_REVISION" in engine_block.group("body")
+
+
 def test_macos_launcher_requires_exactly_one_model():
     script = read("scripts/start-macos.sh")
+    test_macos = read("scripts/test-macos.sh")
+    one_click = read("scripts/macos-one-click.sh")
+    controller = read("macos_controller.py")
     stop_script = read("scripts/stop-macos.sh")
     ovis_script = read("scripts/start-macos-ovisocr2.sh")
     ovis_one_click = read("macos-ovisocr2-one-click.command")
@@ -219,6 +258,18 @@ def test_macos_launcher_requires_exactly_one_model():
     assert "ENABLED_MODEL_COUNT != 1" in script
     assert 'PANDOCR_MODEL_CATALOG="${PANDOCR_MODEL_CATALOG:-$ENABLED_MODEL_ID}"' in script
     assert 'PANDOCR_ENABLE_HPD_PARSING="${PANDOCR_ENABLE_HPD_PARSING:-0}"' in script
+    assert 'PANDOCR_ENABLE_UNLIMITED_OCR="${PANDOCR_ENABLE_UNLIMITED_OCR:-0}"' in script
+    assert 'unlimited-ocr) PANDOCR_ENABLE_UNLIMITED_OCR=1' in script
+    assert 'unlimited_ocr_adapter:app' in script
+    assert 'UNLIMITED_OCR_SERVICE_URL=' in script
+    assert 'PANDOCR_ENABLE_UNLIMITED_OCR="${PANDOCR_ENABLE_UNLIMITED_OCR:-0}"' in test_macos
+    assert 'Testing Unlimited-OCR adapter health' in test_macos
+    assert 'http://${UNLIMITED_OCR_HOST}:${UNLIMITED_OCR_API_PORT}/health' in test_macos
+    assert 'Unlimited-OCR is missing from /api/models' in test_macos
+    assert 'PANDOCR_MACOS_BACKEND="$PANDOCR_MACOS_BACKEND"' in one_click
+    assert 'PANDOCR_ENABLE_UNLIMITED_OCR=1' in one_click
+    assert 'unlimited-ocr' in controller.split('MODEL_IDS =', 1)[1].split('\n', 1)[0]
+    assert '"PANDOCR_ENABLE_UNLIMITED_OCR": "1" if model_id == "unlimited-ocr"' in controller
     assert "PANDOCR_MODEL_SELECTION_CHECK_ONLY" in script
     assert "has_running_non_target_model" in script
     assert "A non-selected macOS model is still running" in script

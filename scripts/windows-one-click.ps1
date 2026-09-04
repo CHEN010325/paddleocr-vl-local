@@ -32,7 +32,8 @@ $script:EnableNavidcOcr = $false
 $script:UnlimitedOcrBackend = "transformers"
 $script:UnlimitedOcrBackendExplicit = $false
 $script:DeployModelIds = @("paddleocr-vl-1.6")
-$script:ModelCatalogIds = @("paddleocr-vl-1.6", "pp-ocrv6", "unlimited-ocr", "ovisocr2", "hpd-parsing", "navidc-ocr")
+$script:ModelCatalogIds = @("paddleocr-vl-1.6", "pp-ocrv6", "ovisocr2", "hpd-parsing", "navidc-ocr")
+$script:RuntimeModelCatalogIds = @($script:ModelCatalogIds)
 Set-Location $script:RepoRoot
 
 function Write-Section {
@@ -305,7 +306,7 @@ function Resolve-ModelId {
         { $_ -in @("3", "unlimited", "unlimited-ocr", "uow") } { return "unlimited-ocr" }
         { $_ -in @("4", "ovis", "ovisocr", "ovisocr2", "ovis-ocr2") } { return "ovisocr2" }
         { $_ -in @("5", "hpd", "hpd-parsing", "hpdparsing") } { return "hpd-parsing" }
-        { $_ -in @("navi", "navidc", "navidc-ocr") } { return "navidc-ocr" }
+        { $_ -in @("6", "navi", "navidc", "navidc-ocr") } { return "navidc-ocr" }
         default { throw "Unknown model '$Value'. Use paddleocr-vl-1.6, pp-ocrv6, unlimited-ocr, ovisocr2, hpd-parsing, or navidc-ocr." }
     }
 }
@@ -357,9 +358,10 @@ function Read-FriendlyDeploymentSelection {
     Write-Host ""
     Write-Host "  1) PaddleOCR-VL 1.6   Full document parsing (recommended default)"
     Write-Host "  2) PP-OCRv6           Fast text OCR"
-    Write-Host "  3) Unlimited-OCR      Long-document parsing"
+    Write-Host "  3) Unlimited-OCR      Long-document parsing (experimental, opt-in)"
     Write-Host "  4) OvisOCR2           Document parsing with vLLM"
     Write-Host "  5) HPD-Parsing        High-throughput hierarchical document parsing"
+    Write-Host "  6) NaviDC-OCR         Complex documents, tables, and formulas"
     Write-Host ""
 
     $answer = Read-Host "Select a model [1]"
@@ -453,7 +455,7 @@ function Resolve-DeploymentSelection {
                 Add-DeploymentModel -Models $selected -ModelId "ovisocr2"
                 continue
             }
-            { $_ -in @("8", "all", "four", "full") } {
+            { $_ -in @("8", "four", "legacy-four") } {
                 Add-DeploymentModel -Models $selected -ModelId "paddleocr-vl-1.6"
                 Add-DeploymentModel -Models $selected -ModelId "pp-ocrv6"
                 Add-DeploymentModel -Models $selected -ModelId "unlimited-ocr"
@@ -479,7 +481,7 @@ function Resolve-DeploymentSelection {
                 Add-DeploymentModel -Models $selected -ModelId "navidc-ocr"
                 continue
             }
-            { $_ -in @("11", "all-five", "full-five") } {
+            { $_ -in @("11", "all-five", "full-five", "all", "full") } {
                 foreach ($modelId in $script:ModelCatalogIds) {
                     Add-DeploymentModel -Models $selected -ModelId $modelId
                 }
@@ -709,14 +711,18 @@ function New-RuntimeEnvFile {
     $lines = Ensure-EnvLine -Lines $lines -Key "PANDOCR_MODEL_CONTROL" -Value "docker"
     $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_MODEL_CONTROLLER_TOKEN" -Value $controllerToken
     $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ACTIVE_MODEL_ON_START" -Value $script:ActiveModel
-    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_MODEL_CATALOG" -Value ($script:ModelCatalogIds -join ",")
+    $script:RuntimeModelCatalogIds = @($script:ModelCatalogIds)
+    if ($script:DeployModelIds -contains "unlimited-ocr") {
+        $script:RuntimeModelCatalogIds += "unlimited-ocr"
+    }
+    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_MODEL_CATALOG" -Value ($script:RuntimeModelCatalogIds -join ",")
     $lines = Ensure-EnvLine -Lines $lines -Key "UNLIMITED_OCR_MODEL_NAME" -Value "baidu/Unlimited-OCR"
     $lines = Set-EnvLine -Lines $lines -Key "UNLIMITED_OCR_BACKEND" -Value $script:UnlimitedOcrBackend
     $lines = Ensure-EnvLine -Lines $lines -Key "UNLIMITED_OCR_PRELOAD" -Value "1"
-    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_UNLIMITED_OCR" -Value "1"
-    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_OVISOCR2" -Value "1"
-    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_HPD_PARSING" -Value "1"
-    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_NAVIDC_OCR" -Value "1"
+    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_UNLIMITED_OCR" -Value $(if ($script:DeployModelIds -contains "unlimited-ocr") { "1" } else { "0" })
+    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_OVISOCR2" -Value $(if ($script:RuntimeModelCatalogIds -contains "ovisocr2") { "1" } else { "0" })
+    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_HPD_PARSING" -Value $(if ($script:RuntimeModelCatalogIds -contains "hpd-parsing") { "1" } else { "0" })
+    $lines = Set-EnvLine -Lines $lines -Key "PANDOCR_ENABLE_NAVIDC_OCR" -Value $(if ($script:RuntimeModelCatalogIds -contains "navidc-ocr") { "1" } else { "0" })
     $lines = Ensure-EnvLine -Lines $lines -Key "NAVIDC_OCR_MODEL_NAME" -Value "StarDoc-AI/NaviDC-OCR"
     $lines = Ensure-EnvLine -Lines $lines -Key "NAVIDC_OCR_MODEL_REVISION" -Value "c7179051a52a0a54a549388de89c6aa715cfd0af"
     $lines = Ensure-EnvLine -Lines $lines -Key "NAVIDC_OCR_SOURCE_REVISION" -Value "737e185c7b74288091cd4395ea80c14b1f71422b"
@@ -730,6 +736,7 @@ function New-RuntimeEnvFile {
     $script:EnableUnlimitedOcr = $script:DeployModelIds -contains "unlimited-ocr"
     $script:EnableOvisOcr2 = $script:DeployModelIds -contains "ovisocr2"
     $script:EnableHpdParsing = $script:DeployModelIds -contains "hpd-parsing"
+    $script:EnableNavidcOcr = $script:DeployModelIds -contains "navidc-ocr"
     $script:EnableNavidcOcr = $script:DeployModelIds -contains "navidc-ocr"
     $script:UnlimitedOcrBackend = (Get-EnvLineValue -Lines $lines -Key "UNLIMITED_OCR_BACKEND" -DefaultValue "transformers").Trim().ToLowerInvariant()
     Set-Content -Path $runtimeEnv -Value $lines -Encoding ASCII
@@ -1085,7 +1092,7 @@ try {
         Write-Section "Dry run complete"
         Write-Host "Selected GPU: $($gpu.Index) - $($gpu.Name)"
         Write-Host "Selected deployment models: $($script:DeployModelIds -join ', ')"
-        Write-Host "WebUI model catalog: $($script:ModelCatalogIds -join ', ')"
+        Write-Host "WebUI model catalog: $($script:RuntimeModelCatalogIds -join ', ')"
         Write-Host "Active model on startup: $script:ActiveModel"
         Write-Host "Services to create: $((Get-DeploymentServiceList) -join ', ')"
         Write-Host "Base env: $baseEnv"
@@ -1183,6 +1190,9 @@ try {
     }
     if ($script:EnableHpdParsing) {
         Write-Host "HPD-Parsing API health: http://localhost:8085/health"
+    }
+    if ($script:EnableNavidcOcr) {
+        Write-Host "NaviDC-OCR API health: http://localhost:8086/health"
     }
     Write-Host "Active model on startup: $script:ActiveModel. When you select another model, the controller fully stops the current model and releases its GPU memory before starting the selected model."
     Write-Host "Useful logs: docker compose --env-file `"$script:RuntimeEnv`" --profile `"*`" logs -f"

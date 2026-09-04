@@ -219,18 +219,26 @@ test('GPU preflight panel shows runnable models, low-VRAM settings, and startup 
           status:'ready',
           gpus:[{name:'RTX 4070 Laptop GPU',totalMiB:8188,freeMiB:7100}],
           runnableModelIds:['pp-ocrv6'],
+          recommendedModelId:'pp-ocrv6',
+          recommendedModelLevel:'recommended',
           models:{'paddleocr-vl-1.6':{supported:false,level:'unsupported',minimumMiB:11264,lowMemoryEnv:['PANDOCR_MAX_CONCURRENT_OCR=1']}}
         },
         models:{'paddleocr-vl-1.6':{ready:false,state:'stopped'}}
       };
+      renderModelSelect();
       renderGpuPreflightPanel();
     `);
     const panel = window.document.getElementById('gpu-preflight-panel');
     assert.match(panel.textContent, /RTX 4070 Laptop GPU/);
     assert.match(panel.textContent, /PP-OCRv6/);
     assert.match(panel.textContent, /11264 MiB/);
+    assert.match(panel.textContent, /推荐模型/);
     assert.doesNotMatch(panel.textContent, /PANDOCR_MAX_CONCURRENT_OCR=1/);
     assert.ok(panel.classList.contains('warning'));
+    window.eval("handleModelSelectionChange=async()=>{window.recommendedSelection=els.modelSelect.value}");
+    panel.querySelector('.gpu-recommendation-button').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(window.recommendedSelection, 'pp-ocrv6');
 
     window.eval(`
       availableModels.push({id:'hpd-parsing',label:'HPD-Parsing'});
@@ -2752,6 +2760,12 @@ test('manual Markdown edits bypass PP-OCR and official-layout renderers', async 
     const { dom, window } = createBrowser();
     await boot(window);
     const ev = (source) => window.eval(source);
+
+    const editButton = window.document.getElementById('edit-btn');
+    assert.ok(editButton, 'the user-facing Markdown correction control must be present');
+    editButton.click();
+    assert.equal(window.document.querySelector('.markdown-editor')?.value, '# Result');
+    window.document.querySelector('.markdown-editor-actions .secondary-button')?.click();
 
     ev(`
       activeResultView='markdown';

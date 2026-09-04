@@ -188,6 +188,7 @@ class NaviDCOCRParser:
             from vllm.v1.engine.async_llm import AsyncLLM
             engine = AsyncLLM.from_engine_args(AsyncEngineArgs(
                 model=MODEL_NAME,
+                revision=MODEL_REVISION,
                 trust_remote_code=True,
                 max_model_len=MAX_MODEL_LEN,
                 gpu_memory_utilization=GPU_MEMORY_UTILIZATION,

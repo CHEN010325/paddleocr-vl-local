@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 ROOT_DIR = Path(__file__).resolve().parent
 PORT = int(os.getenv("PANDOCR_MACOS_CONTROLLER_PORT", "8001"))
 TOKEN = os.getenv("PANDOCR_MODEL_CONTROLLER_TOKEN", "").strip()
-MODEL_IDS = ("paddleocr-vl-1.6", "pp-ocrv6", "ovisocr2", "hpd-parsing")
+MODEL_IDS = ("paddleocr-vl-1.6", "pp-ocrv6", "unlimited-ocr", "ovisocr2", "hpd-parsing")
 ACTIVE_MODEL = os.getenv("PANDOCR_ACTIVE_MODEL_ON_START", "paddleocr-vl-1.6")
 switch_lock = asyncio.Lock()
 operation = {"targetModelId": ACTIVE_MODEL, "state": "idle", "message": ""}
@@ -30,6 +30,7 @@ os.environ.setdefault("PANDOCR_MODEL_CONTROL", "none")
 os.environ["PANDOCR_MODEL_CATALOG"] = ",".join(MODEL_IDS)
 os.environ["PANDOCR_ENABLE_PADDLEOCR_VL"] = "1"
 os.environ["PANDOCR_ENABLE_PPOCRV6"] = "1"
+os.environ["PANDOCR_ENABLE_UNLIMITED_OCR"] = "1"
 os.environ["PANDOCR_ENABLE_HPD_PARSING"] = "1"
 os.environ["PANDOCR_ENABLE_OVISOCR2"] = "1"
 import server  # noqa: E402
@@ -46,6 +47,7 @@ def model_env(model_id: str) -> dict[str, str]:
     flags = {
         "PANDOCR_ENABLE_PADDLEOCR_VL": "1" if model_id == "paddleocr-vl-1.6" else "0",
         "PANDOCR_ENABLE_PPOCRV6": "1" if model_id == "pp-ocrv6" else "0",
+        "PANDOCR_ENABLE_UNLIMITED_OCR": "1" if model_id == "unlimited-ocr" else "0",
         "PANDOCR_ENABLE_HPD_PARSING": "1" if model_id == "hpd-parsing" else "0",
         "PANDOCR_ENABLE_OVISOCR2": "1" if model_id == "ovisocr2" else "0",
     }

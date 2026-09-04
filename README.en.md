@@ -1,6 +1,6 @@
 # PaddleOCR Local
 
-**One local workbench for five OCR and document-parsing models.** Upload images, PDFs, Word documents, or PowerPoint files, inspect source and structured output side by side, and export Markdown, JSON, and extracted assets.
+**A local document workbench that turns PDFs, images, and Office files into editable Markdown.** Run five OCR/document-parsing models behind one UI, keep data on your machine, automate with the CLI or watch folder, and create editable or searchable exports.
 
 [简体中文](README.md) · [Quick start](QUICKSTART.md) · [CLI](CLI.md) · [Compatibility](docs/compatibility.md) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md)
 
@@ -13,11 +13,21 @@
 ## Why it exists
 
 - **Local-first**: documents, results, and task history stay on your machine.
-- **Five models, one UI**: PaddleOCR-VL 1.6, PP-OCRv6, OvisOCR2, HPD-Parsing, and NaviDC-OCR. Unlimited-OCR is disabled in the default deployment and model catalog.
+- **Five models, one UI**: PaddleOCR-VL 1.6, PP-OCRv6, OvisOCR2, HPD-Parsing, and NaviDC-OCR. Unlimited-OCR is not started by default; it is hidden from the default Windows/Linux Docker catalog and remains an opt-in macOS experiment.
 - **Single-GPU friendly**: only the active model runs; switching releases the others' VRAM.
 - **Cross-platform**: Windows/Linux NVIDIA Docker plus native and MLX paths for Apple Silicon.
-- **Built for documents**: page progress, recovery, source/result comparison, tables, formulas, and exports.
+- **Built for documents**: page progress, recovery, source/result comparison, tables, formulas, and editable/searchable exports.
 - **Deployment hardening**: VRAM preflight, isolated model control and Office conversion, API tokens, pinned dependencies, and high-coverage tests.
+
+## Who it is for
+
+| Need | Start here |
+| --- | --- |
+| Keep private documents offline | Local WebUI and on-machine task history |
+| Work with limited VRAM | PP-OCRv6 / OvisOCR2 with on-demand switching |
+| Parse papers, tables, and formulas | PaddleOCR-VL 1.6 or HPD-Parsing |
+| Automate batches | CLI, folder batching, or Watch Folder |
+| Use Apple Silicon | Native macOS path or OvisOCR2 MLX |
 
 ## Models
 
@@ -27,7 +37,7 @@
 | PP-OCRv6 | Text OCR and lower-memory systems | NVIDIA 4 GB+ | Fast startup; CPU Lite remains on the roadmap |
 | OvisOCR2 | Document understanding, Apple Silicon | NVIDIA 8 GB+ / Apple Silicon | Uses MLX by default on macOS |
 | HPD-Parsing | High-quality document parsing | NVIDIA 8 GB+ | Official customized vLLM runtime |
-| NaviDC-OCR | Complex documents, layout, tables and formulas | NVIDIA 8 GB+ | StarDoc-AI Transformers two-step pipeline |
+| NaviDC-OCR | Complex documents, layout, tables and formulas | NVIDIA 8 GB+ | Official NaviOCRClient vLLM async two-step pipeline (Transformers backend optional) |
 
 These are startup compatibility guidelines, not guarantees for every document. See the [compatibility guide](docs/compatibility.md).
 
@@ -36,46 +46,58 @@ These are startup compatibility guidelines, not guarantees for every document. S
 Windows with NVIDIA:
 
 ```powershell
+.\windows-one-click.bat -DryRun
 .\windows-one-click.bat
 ```
 
 macOS Apple Silicon:
 
 ```bash
+make doctor
 ./macos-one-click.command
 ```
 
 Linux / Docker:
 
 ```bash
+make doctor
 cp env.docker env.txt
 ./build.sh
 ./deploy.sh
 ```
 
-Then open <http://localhost:8000>. Each logical model is guarded by its own Compose profile. The deployment script creates stopped standby containers and lets the controller start exactly one selected model. A switch fully stops the old model and releases its GPU memory before the new model starts, so GPU memory contains only the currently selected logical model at every moment. The scripts never use a bare `docker compose up` that could load multiple models. The first run downloads images or model weights. See [Docker deployment](DOCKER_DEPLOY.md) for advanced configuration.
+Then open <http://localhost:8000>. Each of the five logical models is guarded by its own Compose profile. The deployment script creates stopped standby containers and lets the controller start exactly one selected model. A switch fully stops the old model and releases its GPU memory before the new model starts, so GPU memory contains only the currently selected logical model at every moment. The scripts never use a bare `docker compose up` that could load multiple models. The first run downloads images or model weights. See [Docker deployment](DOCKER_DEPLOY.md) for advanced configuration, or use the [60-second demo](docs/QUICK_DEMO.md) to exercise export and recovery first.
 
 ## Features
 
 - Multi-file image, PDF, PPT/PPTX, DOC/DOCX upload
 - Page/batch PDF processing, progress, persistence, and interrupted-task recovery
-- On-demand deployment, VRAM preflight, and runtime switching for four default models
+- Retry failed batches without reprocessing completed batches
+- On-demand deployment, VRAM preflight, and runtime switching for five default models
+- Hardware-aware model recommendation with one-click switching
 - Markdown, table, formula, code, and extracted-image rendering
 - Side-by-side source and result views with synchronized scrolling
 - Searchable local task history
-- Markdown, JSON, and extracted-asset downloads
+- Markdown, JSON, extracted assets, editable DOCX, searchable PDF, self-contained HTML, and table CSV/XLSX export
 - Chinese and English UI
 - FastAPI endpoints and OpenAPI description
 - CLI, folder batching, and watch-folder automation
 
 ## Quality and security
 
-- 237 Python tests and 44 frontend tests with 95%+ coverage gates
+- 250+ Python tests and 48+ frontend tests with 95%+ coverage gates, including a dedicated exporter floor
 - Dependency vulnerability audits in CI
 - Pinned container images, Actions, and model revisions
 - Isolated Web, Docker controller, and LibreOffice converter services
 
 See [CHANGELOG](CHANGELOG.md), [SECURITY](SECURITY.md), and [SUPPORT](SUPPORT.md).
+
+## Why star this project
+
+- One local entry point for images, PDFs, Word, and PowerPoint instead of separate model-specific setups.
+- Strict single-GPU switching so large models do not unexpectedly occupy the GPU together.
+- Editable, batch-friendly output that can feed a personal workflow or internal service.
+- No default document upload or telemetry; hardware claims are backed by reproducible reports.
 
 Contributions, hardware reports, model adapters, and documentation improvements are welcome. The project is licensed under [Apache-2.0](LICENSE).
 
